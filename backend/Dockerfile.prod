@@ -1,0 +1,52 @@
+# ============================================================
+# 跨境电商ERP — 后端多阶段构建 (Production)
+# Stage 1: build-essential + mysqlclient 编译依赖
+# Stage 2: 轻量运行镜像
+# ============================================================
+
+# ─── Stage 1: Builder ───
+FROM python:3.12-slim AS builder
+
+# 安装编译依赖
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        default-libmysqlclient-dev \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+RUN python -m venv /build/venv
+ENV PATH="/build/venv/bin:$PATH"
+
+COPY requirements.txt /build/
+RUN pip install --no-cache-dir -r /build/requirements.txt
+
+# ─── Stage 2: Runtime ───
+FROM python:3.12-slim
+
+# 仅安装 mysql 运行时库（不需要 build-essential）
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        default-libmysqlclient-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 从 builder 阶段复制完整 venv
+COPY --from=builder /build/venv /venv
+ENV PATH="/venv/bin:$PATH"
+
+WORKDIR /app
+
+# 复制项目代码
+COPY . /app/
+
+# 创建必要的运行时目录
+RUN mkdir -p /app/logs /app/exports /app/uploads/images /app/staticfiles
+
+# 暴露 API 端口
+EXPOSE 8000
+
+# 默认启动命令（由 backend-entrypoint.sh 覆盖）
+# 生产环境通过 docker-compose 注入 entrypoint
+CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "myproject.asgi:application"]

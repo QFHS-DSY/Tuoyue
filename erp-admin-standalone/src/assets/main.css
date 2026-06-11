@@ -1,0 +1,76 @@
+/* ERP 全局重置样式 */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #1a1a2e;
+  background: #f8f9fc;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  max-width: none !important;
+  padding: 0 !important;
+  margin: 0 auto !important;
+  display: block !important;
+  grid-template-columns: none !important;
+}
+
+/* 滚动条美化 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* Element Plus el-main 宽度撑满 */
+.el-main {
+  width: 100% !important;
+  max-width: none !important;
+  padding: 0 !important;
+}
+
+/* 页面容器 — 给各页面内容加内边距 */
+.page-container {
+  padding: 24px 28px;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+/* =============================================
+   侧边栏菜单 — 浅色主题（商务厅蓝绿）
+   注意：App.vue 使用自定义 nav-item，非 el-menu
+   ============================================= */
+/* 如果使用 Element Plus 原生侧边栏时才生效 */
+.el-aside {
+  background: #fff !important;
+  border-right: 1px solid #e5e7eb !important;
+}
+
+/* 暗色主题已移除，统一使用浅色方案 */

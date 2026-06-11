@@ -1,0 +1,12 @@
+import MySQLdb
+c = MySQLdb.connect(host='127.0.0.1', user='admin_erp', password='Bzh200257.', database='sku_db', port=3307, connect_timeout=5)
+cur = c.cursor()
+cur.execute('SELECT COUNT(*) FROM core_product')
+print('商品:', cur.fetchone()[0])
+cur.execute('SELECT COUNT(*) FROM core_order')
+print('订单:', cur.fetchone()[0])
+cur.execute('SELECT COUNT(*) FROM core_productvariant')
+print('变体:', cur.fetchone()[0])
+cur.execute("SELECT username, is_superuser FROM auth_user WHERE username='admin'")
+print('admin:', cur.fetchone())
+c.close()

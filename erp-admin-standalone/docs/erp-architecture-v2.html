@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>跨境ERP系统 - 前端架构流程图 V2</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      line-height: 1.6;
+      padding: 40px 20px;
+    }
+    
+    h1 {
+      text-align: center;
+      font-size: 1.8rem;
+      font-weight: 500;
+      margin-bottom: 8px;
+      color: #fff;
+    }
+    
+    .subtitle {
+      text-align: center;
+      color: #888;
+      margin-bottom: 40px;
+      font-size: 0.9rem;
+    }
+    
+    .diagram-section {
+      max-width: 1600px;
+      margin: 0 auto 40px;
+    }
+    
+    .diagram-card {
+      background: #242424;
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 30px;
+      margin-bottom: 30px;
+    }
+    
+    .diagram-title {
+      font-size: 1.1rem;
+      font-weight: 500;
+      margin-bottom: 20px;
+      color: #fff;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #333;
+    }
+    
+    .mermaid {
+      background: #1a1a1a;
+      border-radius: 8px;
+      padding: 20px;
+      overflow-x: auto;
+    }
+    
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      margin-top: 20px;
+      padding: 16px;
+      background: #1a1a1a;
+      border-radius: 8px;
+    }
+    
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: #aaa;
+    }
+    
+    .legend-color {
+      width: 16px;
+      height: 16px;
+      border-radius: 3px;
+    }
+    
+    .color-frontend { background: #4a9eff; }
+    .color-backend { background: #ff6b6b; }
+    .color-ai { background: #9b59b6; }
+    .color-db { background: #27ae60; }
+    .color-external { background: #f39c12; }
+    
+    .note {
+      background: #1a1a1a;
+      padding: 16px;
+      border-radius: 8px;
+      margin-top: 20px;
+      font-size: 0.85rem;
+      color: #888;
+      line-height: 1.8;
+    }
+    
+    .note strong {
+      color: #4a9eff;
+    }
+    
+    @media (max-width: 768px) {
+      body { padding: 20px 12px; }
+      .diagram-card { padding: 20px; }
+      h1 { font-size: 1.4rem; }
+    }
+  </style>
+</head>
+<body>
+  <h1>跨境ERP系统 - 前端架构流程图</h1>
+  <p class="subtitle">参考豪哥架构图风格 · 含AI模块 · 2026.04.10</p>
+
+  <!-- 主架构图 -->
+  <div class="diagram-section">
+    <div class="diagram-card">
+      <h2 class="diagram-title">🏗️ 系统分层架构图</h2>
+      <div class="mermaid">
+flowchart TB
+    subgraph L1["📱 用户层 / 前端页面"]
+        direction LR
+        P1["商品采集页面<br/>CollectView.vue"]
+        P2["商品管理页面<br/>ManageView.vue"]
+        P3["订单管理页面<br/>ListView.vue"]
+        P4["AI智能上货<br/>AIUploadView.vue"]
+        P5["数据报表<br/>ReportsView.vue"]
+        P6["库存/物流/店铺<br/>IndexView.vue"]
+    end
+
+    subgraph L2["🔌 HTTP / Axios 请求层"]
+        A1["request.js<br/>统一封装"]
+    end
+
+    subgraph L3["⚙️ Django 后端服务"]
+        direction TB
+        
+        subgraph API["API Gateway"]
+            API_MAIN["/api/ 主路由"]
+        end
+        
+        subgraph Services["业务服务层"]
+            S1["collect<br/>商品采集"]
+            S2["goods<br/>商品管理"]
+            S3["orders<br/>订单管理"]
+            S4["ai_agent<br/>AI智能模块"]
+            S5["reports<br/>数据报表"]
+            S6["inventory<br/>库存物流"]
+        end
+    end
+
+    subgraph L4["🤖 AI 服务层"]
+        AI_PROXY["AI Proxy<br/>统一代理"]
+        TUOYUE["拓岳平台<br/>大模型API"]
+        AUTOMATION["自动化引擎<br/>无鼠标操作"]
+    end
+
+    subgraph L5["💾 数据层"]
+        DB[("MySQL<br/>业务数据")]
+        CACHE[("Redis<br/>缓存/会话")]
+        EXTERNAL["外部平台<br/>1688/电商平台"]
+    end
+
+    P1 & P2 & P3 & P4 & P5 & P6 -->|"HTTP /api/*"| A1
+    A1 --> API_MAIN
+    API_MAIN --> S1 & S2 & S3 & S4 & S5 & S6
+    
+    S1 & S2 -->|"读写"| DB
+    S3 & S6 -->|"读写"| DB
+    S5 -->|"聚合查询"| DB
+    
+    S4 -->|"调用"| AI_PROXY
+    AI_PROXY -->|"生成标题/描述"| TUOYUE
+    AI_PROXY -->|"执行自动化"| AUTOMATION
+    
+    S1 -->|"采集"| EXTERNAL
+    AUTOMATION -->|"操作"| EXTERNAL
+    
+    S1 & S2 & S3 -->|"缓存"| CACHE
+
+    style P1 fill:#4a9eff,color:#fff
+    style P2 fill:#4a9eff,color:#fff
+    style P3 fill:#4a9eff,color:#fff
+    style P4 fill:#9b59b6,color:#fff
+    style P5 fill:#4a9eff,color:#fff
+    style P6 fill:#4a9eff,color:#fff
+    style S4 fill:#9b59b6,color:#fff
+    style AI_PROXY fill:#9b59b6,color:#fff
+    style TUOYUE fill:#9b59b6,color:#fff
+    style AUTOMATION fill:#9b59b6,color:#fff
+    style DB fill:#27ae60,color:#fff
+    style EXTERNAL fill:#f39c12,color:#000
+      </div>
+      
+      <div class="legend">
+        <div class="legend-item">
+          <div class="legend-color color-frontend"></div>
+          <span>前端页面 (Vue 3)</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color color-backend"></div>
+          <span>Django 后端服务</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color color-ai"></div>
+          <span>AI / 自动化模块</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color color-db"></div>
+          <span>数据库 / 缓存</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color color-external"></div>
+          <span>外部平台</span>
+        </div>
+      </div>
+      
+      <div class="note">
+        <strong>架构说明：</strong><br>
+        • 前端统一通过 request.js 调用后端 API，所有 AI 能力通过 ai_agent 服务代理到拓岳平台<br>
+        • 自动化引擎支持无鼠标操作流程（粘贴链接 → 自动识别 → 跳转执行）<br>
+        • 数据可视化模块直接消费 MySQL 时序数据，展示销量/库存/采集成功率等图表
+      </div>
+    </div>
+  </div>
+
+  <!-- AI模块详细流程 -->
+  <div class="diagram-section">
+    <div class="diagram-card">
+      <h2 class="diagram-title">🤖 AI 智能上货模块流程</h2>
+      <div class="mermaid">
+flowchart LR
+    subgraph Input["用户输入"]
+        LINK["粘贴商品链接<br/>1688/淘宝/拼多多"]
+        DESC["输入商品描述"]
+    end
+
+    subgraph Process["AI 处理流程"]
+        PARSER["链接解析器<br/>提取商品信息"]
+        AI_GEN["拓岳大模型<br/>生成优化内容"]
+        PREVIEW["预览确认<br/>人工审核"]
+    end
+
+    subgraph Output["输出结果"]
+        TITLE["优化标题"]
+        DETAIL["商品详情"]
+        TAGS["智能标签"]
+        PRICE["定价建议"]
+    end
+
+    subgraph Action["自动化执行"]
+        AUTO["一键上货<br/>无鼠标操作"]
+        PLATFORM["电商平台<br/>Shopee/Lazada等"]
+    end
+
+    LINK --> PARSER
+    DESC --> AI_GEN
+    PARSER --> AI_GEN
+    AI_GEN --> PREVIEW
+    PREVIEW --> TITLE & DETAIL & TAGS & PRICE
+    PREVIEW -->|"确认发布"| AUTO
+    AUTO -->|"自动填充"| PLATFORM
+
+    style LINK fill:#4a9eff,color:#fff
+    style AI_GEN fill:#9b59b6,color:#fff
+    style AUTO fill:#9b59b6,color:#fff
+    style PLATFORM fill:#f39c12,color:#000
+      </div>
+    </div>
+  </div>
+
+  <!-- 数据可视化模块 -->
+  <div class="diagram-section">
+    <div class="diagram-card">
+      <h2 class="diagram-title">📊 数据可视化模块架构</h2>
+      <div class="mermaid">
+flowchart TB
+    subgraph DataSource["数据源"]
+        MYSQL[("MySQL<br/>业务数据库")]
+        LOGS["操作日志"]
+    end
+
+    subgraph Backend["后端聚合"]
+        AGG["数据聚合服务<br/>reports"]
+        API_DATA["可视化 API<br/>/api/reports/*"]
+    end
+
+    subgraph Frontend["前端展示"]
+        DASHBOARD["数据报表页面<br/>ReportsView.vue"]
+        
+        subgraph Charts["图表组件"]
+            C1["销量趋势<br/>ECharts 折线图"]
+            C2["库存预警<br/>进度条/仪表盘"]
+            C3["采集成功率<br/>环形图"]
+            C4["订单分布<br/>柱状图/饼图"]
+        end
+    end
+
+    subgraph User["用户"]
+        OPERATOR["运营人员"]
+    end
+
+    MYSQL & LOGS --> AGG
+    AGG --> API_DATA
+    API_DATA --> DASHBOARD
+    DASHBOARD --> C1 & C2 & C3 & C4
+    C1 & C2 & C3 & C4 --> OPERATOR
+
+    style MYSQL fill:#27ae60,color:#fff
+    style AGG fill:#ff6b6b,color:#fff
+    style DASHBOARD fill:#4a9eff,color:#fff
+    style C1 fill:#4a9eff,color:#fff
+    style C2 fill:#4a9eff,color:#fff
+    style C3 fill:#4a9eff,color:#fff
+    style C4 fill:#4a9eff,color:#fff
+      </div>
+    </div>
+  </div>
+
+  <!-- 前端技术栈 -->
+  <div class="diagram-section">
+    <div class="diagram-card">
+      <h2 class="diagram-title">🛠️ 前端技术栈</h2>
+      <div class="mermaid">
+flowchart TB
+    subgraph Core["核心框架"]
+        VUE["Vue 3<br/>Composition API"]
+        ROUTER["Vue Router 4"]
+        PINIA["Pinia<br/>状态管理"]
+    end
+
+    subgraph UI["UI 组件库"]
+        EP["Element Plus"]
+        ICONS["@element-plus/icons-vue"]
+    end
+
+    subgraph Utils["工具库"]
+        AXIOS["Axios<br/>HTTP请求"]
+        ECHARTS["ECharts<br/>数据可视化"]
+    end
+
+    subgraph Dev["开发工具"]
+        VITE["Vite 6<br/>构建工具"]
+        ESLINT["ESLint"]
+    end
+
+    VUE --> ROUTER
+    VUE --> PINIA
+    VUE --> EP
+    EP --> ICONS
+    VUE --> AXIOS
+    VUE --> ECHARTS
+    VITE --> VUE
+
+    style VUE fill:#4a9eff,color:#fff
+    style EP fill:#4a9eff,color:#fff
+    style ECHARTS fill:#9b59b6,color:#fff
+      </div>
+      
+      <div class="note">
+        <strong>技术选型理由：</strong><br>
+        • Vue 3 + Composition API：现代响应式，更好的 TypeScript 支持（后续可迁移）<br>
+        • Element Plus：企业级组件库，与妙手 ERP 风格接近<br>
+        • ECharts：豪哥要求的销量/库存/采集成功率可视化，功能完善<br>
+        • Pinia：比 Vuex 更简洁，适合中小型项目
+      </div>
+    </div>
+  </div>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      flowchart: {
+        curve: 'basis',
+        padding: 20,
+        nodeSpacing: 50,
+        rankSpacing: 50
+      }
+    });
+  </script>
+</body>
+</html>

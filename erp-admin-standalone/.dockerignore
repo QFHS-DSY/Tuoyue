@@ -1,0 +1,58 @@
+# ============================================================
+# 跨境电商ERP — 前端 .dockerignore
+# 排除所有不需要进入 Docker 镜像的文件和目录
+# ============================================================
+
+# ── 版本控制 ──
+.git
+.gitignore
+
+# ── Node 依赖（在 Dockerfile 内重新安装） ──
+node_modules
+
+# ── 构建产物（在 Dockerfile 内重新构建） ──
+dist
+dist-ssr
+
+# ── 本地打包文件 ──
+*.zip
+*.tar.gz
+
+# ── 环境变量（包含敏感信息） ──
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ── 日志文件 ──
+*.log
+logs/
+
+# ── 编辑器 / IDE ──
+.idea
+.vscode
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── 文档（生产中不需要） ──
+docs/
+*.md
+README.md
+
+# ── 部署平台配置 ──
+.vercel
+vercel.json
+
+# ── 测试 / 覆盖报告 ──
+coverage
+__screenshots__
+
+# ── 测试图片（含中文文件名，避免 Docker tar 编码问题） ──
+public/images/
+
+# ── TypeScript 构建信息 ──
+*.tsbuildinfo
+*.timestamp-*-*.mjs
