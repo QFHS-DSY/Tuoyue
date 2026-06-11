@@ -1,0 +1,119 @@
+# ============================================================
+# 跨境ERP - Docker Compose（本地开发调试）
+# 配置文件：.env（与 docker-compose.yml 同目录）
+# 端口映射：前端1101 后端1102 数据库1103 Redis1104
+# 启动：docker compose up -d
+# 停止：docker compose down
+# ============================================================
+
+services:
+  # ── 数据库 ──────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: erp-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_dev_only}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-sku_db}
+      MYSQL_USER: ${MYSQL_USER:-erp}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-erp_dev_pass}
+    ports:
+      - "${ERP_MYSQL_PORT:-1103}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-log-bin
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p${MYSQL_ROOT_PASSWORD:-root_dev_only} || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+
+  # ── 缓存 / 消息队列 ────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: erp-redis
+    restart: unless-stopped
+    ports:
+      - "${ERP_REDIS_PORT:-1104}:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly no --save ""
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── 后端 ────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: erp-backend
+    restart: unless-stopped
+    ports:
+      - "${ERP_BACKEND_PORT:-1102}:1102"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_USER: erp
+      MYSQL_PASSWORD: erp_dev_pass
+      REDIS_URL: redis://redis:6379/1
+      CHANNEL_REDIS_URL: redis://redis:6379/2
+      CORS_ALLOW_ALL_ORIGINS: "True"
+      CSRF_TRUSTED_ORIGINS: "http://localhost:1101,http://127.0.0.1:1101${DOMAIN:+,http://${DOMAIN}}"
+      DB_FAILOPEN_SQLITE: "False"
+      CACHE_FAILOPEN_LOCMEM: "False"
+      DEMO_MODE: "True"
+      DEBUG: "True"
+    volumes:
+      - ./backend:/app
+    command: >
+      sh -c "
+        python manage.py migrate &&
+        python -c \"import os;os.environ['DJANGO_SETTINGS_MODULE']='myproject.settings';import django;django.setup();from django.contrib.auth.models import User;User.objects.get_or_create(username='admin',defaults={'is_superuser':True,'is_staff':True});u=User.objects.get(username='admin');u.set_password('123456');u.save()\" &&
+        python -m uvicorn myproject.asgi:application --host 0.0.0.0 --port 1102 --reload
+      "
+
+  # ── 前端（Vite HMR 开发模式） ──────────────────────────
+  frontend:
+    image: node:20-alpine
+    container_name: erp-frontend
+    restart: unless-stopped
+    ports:
+      - "${ERP_FRONTEND_PORT:-1101}:1101"
+    depends_on:
+      - backend
+    environment:
+      VITE_API_BASE_URL: http://backend:${ERP_BACKEND_PORT:-1102}
+      # 容器文件变更 → HMR 热更新
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "1000"
+    working_dir: /app
+    volumes:
+      - ./erp-admin-standalone:/app
+      - node_modules_vol:/app/node_modules
+    command: >
+      sh -c "
+        if [ ! -d node_modules/vite ]; then
+          echo 'Installing dependencies...';
+          npm install --no-audit --no-fund;
+        fi;
+        npx vite --host 0.0.0.0 --port 1101 --strictPort
+      "
+
+volumes:
+  mysql_data:
+  redis_data:
+  node_modules_vol:

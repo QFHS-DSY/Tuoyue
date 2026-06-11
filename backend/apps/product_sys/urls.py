@@ -1,0 +1,30 @@
+from rest_framework.routers import DefaultRouter
+from apps.product_sys.views import *
+
+router = DefaultRouter()
+router.register(r'product', ProductViewSet, basename='ps-product')
+router.register(r'product-sku', ProductSkuViewSet, basename='ps-product-sku')
+router.register(r'product-spec', ProductSpecViewSet, basename='ps-product-spec')
+router.register(r'spu-info', SpuInfoViewSet, basename='ps-spu-info')
+router.register(r'spu-sku-relation', SpuSkuRelationViewSet, basename='ps-spu-sku-relation')
+router.register(r'spu-attribute', SpuAttributeViewSet, basename='ps-spu-attribute')
+router.register(r'development-task', DevelopmentTaskViewSet, basename='ps-development-task')
+router.register(r'bundle-product', BundleProductViewSet, basename='ps-bundle-product')
+router.register(r'bundle-product-item', BundleProductItemViewSet, basename='ps-bundle-product-item')
+router.register(r'accessory', AccessoryViewSet, basename='ps-accessory')
+router.register(r'upc-code', UpcCodeViewSet, basename='ps-upc-code')
+router.register(r'transparency-account', TransparencyAccountViewSet, basename='ps-transparency-account')
+router.register(r'transparency-product', TransparencyProductViewSet, basename='ps-transparency-product')
+router.register(r'transparency-tcode', TransparencyTcodeViewSet, basename='ps-transparency-tcode')
+router.register(r'brand', BrandViewSet, basename='ps-brand')
+router.register(r'category', CategoryViewSet, basename='ps-category')
+router.register(r'product-image', ProductImageViewSet, basename='ps-product-image')
+router.register(r'attribute', AttributeViewSet, basename='ps-attribute')
+router.register(r'attribute-value', AttributeValueViewSet, basename='ps-attribute-value')
+router.register(r'quality-template', QualityTemplateViewSet, basename='ps-quality-template')
+router.register(r'product-quality-info', ProductQualityInfoViewSet, basename='ps-product-quality-info')
+router.register(r'platform-match', PlatformMatchViewSet, basename='ps-platform-match')
+router.register(r'match-rule', MatchRuleViewSet, basename='ps-match-rule')
+router.register(r'alibaba-match', AlibabaMatchViewSet, basename='ps-alibaba-match')
+
+urlpatterns = router.urls

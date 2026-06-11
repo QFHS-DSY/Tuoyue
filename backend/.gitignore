@@ -1,0 +1,39 @@
+# Python bytecode/cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# 本机 MySQL（mysqld --initialize 数据目录，勿提交）
+.mysql_local/
+
+# Test/cache artifacts
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local DB / exports / archives / logs
+db.sqlite3
+*.log
+*.tar
+exports/
+
+# Nested repositories (do not commit as submodules)
+backend/
+backendv1/

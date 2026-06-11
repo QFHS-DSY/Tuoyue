@@ -1,0 +1,64 @@
+# 本地开发：MySQL 8 + Redis（Django / Channels / Celery 依赖）
+# 启动：docker compose up -d
+# 停止：docker compose down
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: backend-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_dev_only}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-sku_db}
+      MYSQL_USER: ${MYSQL_USER:-backend}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-backend_dev_pass}
+    ports:
+      - "${MYSQL_PUBLISH_PORT:-1103}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      # 容器内使用 MYSQL_ROOT_PASSWORD；compose 里 $$ 转义为 $
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: backend-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PUBLISH_PORT:-1104}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend-test:
+    build: .
+    container_name: backend-test
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-dev}
+      DEBUG: "False"
+      DJANGO_SETTINGS_MODULE: myproject.settings_integration_test
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-sku_db}
+      MYSQL_USER: ${MYSQL_USER:-backend}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-backend_dev_pass}
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      REDIS_URL: redis://redis:6379/1
+      CHANNEL_REDIS_URL: redis://redis:6379/2
+      CELERY_TASK_ALWAYS_EAGER: "True"
+    command: ["pytest", "-q"]
+
+volumes:
+  mysql_data:

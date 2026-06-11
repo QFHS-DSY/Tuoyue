@@ -1,0 +1,32 @@
+# ============================================================
+# 跨境电商ERP — 前端多阶段构建 (Production)
+# Stage 1: 使用 Node 20 构建 Vue 3 项目
+# Stage 2: 使用 Nginx Alpine 托管静态文件
+# Nginx 配置文件由 docker-compose volume 挂载，无需内嵌
+# ============================================================
+
+# ─── Stage 1: Build ───
+FROM node:20-alpine AS builder
+
+WORKDIR /build
+
+# 复制依赖清单并安装
+COPY package*.json ./
+RUN npm ci --only=production && \
+    npm cache clean --force
+
+# 复制源码并构建
+COPY . .
+RUN npm run build
+
+# ─── Stage 2: Runtime ───
+FROM nginx:1.27-alpine
+
+# 从 builder 阶段复制构建产物
+COPY --from=builder /build/dist /usr/share/nginx/html
+
+# 暴露端口
+EXPOSE 80
+
+# 前台启动 Nginx
+CMD ["nginx", "-g", "daemon off;"]

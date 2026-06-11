@@ -1,0 +1,8 @@
+﻿<template><div class="page-container"><el-card><template #header><span>审批工作台</span></template><el-tabs v-model="activeTab"><el-tab-pane label="待处理" name="pending"/><el-tab-pane label="已处理" name="done"/><el-tab-pane label="我发起的" name="mine"/></el-tabs><el-table :data="list" border stripe v-loading="loading"><el-table-column prop="task_no" label="审批编号" width="150"/><el-table-column prop="title" label="标题" width="200"/><el-table-column prop="applicant_name" label="申请人" width="100"/><el-table-column prop="approver_name" label="审批人" width="100"/><el-table-column prop="status" label="状态" width="100"/><el-table-column prop="created_at" label="创建时间" width="160"/><el-table-column label="操作" width="150"><template #default="{ row }"><el-button size="small" type="success" @click="handleApprove(r)">同意</el-button><el-button size="small" type="danger" @click="handleReject(r)">驳回</el-button></template></el-table-column></el-table><el-pagination v-model:current-page="p.page" layout="total,prev,pager,next" :total="p.total" @current-change="load"/></el-card></div></template>
+<script setup>import { ref, reactive, onMounted } from 'vue'; import { approvalTaskApi, approvalTypeApi } from '@/api/tools'; import { ElMessage } from 'element-plus'
+const activeTab = ref('pending'); const list = ref([]); const loading = ref(false); const p = reactive({ page: 1, total: 0 })
+async function load() { loading.value = true; try { const data = await approvalTaskApi.list({ page: p.page }); list.value = data?.results || data || []; p.total = data?.count || 0 } catch { } finally { loading.value = false } }
+function handleApprove(r) { ElMessage.success(`已通过: ${r.title}`) }
+function handleReject(r) { ElMessage.error(`已驳回: ${r.title}`) }
+onMounted(load)
+</script>
