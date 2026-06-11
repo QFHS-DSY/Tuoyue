@@ -7,10 +7,10 @@ services:
     container_name: backend-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_dev_only}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change_me_root_password}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-sku_db}
       MYSQL_USER: ${MYSQL_USER:-backend}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-backend_dev_pass}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change_me_backend_password}
     ports:
       - "${MYSQL_PUBLISH_PORT:-1103}:3306"
     volumes:
@@ -52,7 +52,7 @@ services:
       DJANGO_SETTINGS_MODULE: myproject.settings_integration_test
       MYSQL_DATABASE: ${MYSQL_DATABASE:-sku_db}
       MYSQL_USER: ${MYSQL_USER:-backend}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-backend_dev_pass}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change_me_backend_password}
       MYSQL_HOST: mysql
       MYSQL_PORT: "3306"
       REDIS_URL: redis://redis:6379/1

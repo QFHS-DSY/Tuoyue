@@ -1,5 +1,7 @@
 from .settings import *  # noqa
 
+DEBUG = True
+
 # Fast and dependency-light test DB.
 DATABASES = {
     "default": {
@@ -17,7 +19,9 @@ PASSWORD_HASHERS = [
 ]
 
 CELERY_TASK_ALWAYS_EAGER = True
-# 单测不等待真实发送间隔
+DEMO_MODE = False
+SMS_DEBUG_BYPASS_CODE = ""
+SMS_EXPOSE_CODE_IN_RESPONSE = True
 SMS_SEND_MIN_INTERVAL_SECONDS = 0
 SMS_SEND_IP_MIN_INTERVAL_SECONDS = 0
 SMS_SEND_DAILY_LIMIT_PHONE = 0

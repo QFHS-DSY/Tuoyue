@@ -13,7 +13,7 @@ DATABASES = {
         "ENGINE": "django.db.backends.mysql",
         "NAME": os.getenv("MYSQL_DATABASE", "sku_db"),
         "USER": os.getenv("MYSQL_USER", "backend"),
-        "PASSWORD": os.getenv("MYSQL_PASSWORD", "backend_dev_pass"),
+        "PASSWORD": os.getenv("MYSQL_PASSWORD", "ci_only_password"),
         "HOST": os.getenv("MYSQL_HOST", "mysql"),
         "PORT": os.getenv("MYSQL_PORT", "3306"),
         "CONN_MAX_AGE": 0,

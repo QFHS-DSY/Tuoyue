@@ -127,6 +127,9 @@ def record_send_success(phone: str, client_ip: str) -> None:
 
 
 def store_sms_code(phone: str, code: str) -> None:
+    cache.delete(f"{SMS_VERIFY_FAIL_PREFIX}{phone}")
+    cache.delete(f"{SMS_VERIFY_LOCK_PREFIX}{phone}")
+    cache.delete(f"{SMS_VERIFY_SUCCESS_PREFIX}{phone}")
     cache.set(f"{SMS_CODE_CACHE_PREFIX}{phone}", code, timeout=_sms_code_ttl_seconds())
 
 
@@ -239,7 +242,8 @@ def verify_sms_code_and_consume(phone: str, submitted_code: str) -> Tuple[bool, 
 
     submitted = submitted_code.strip()
     # 本地联调后门：验证码 123456 直接绕过 Redis 校验
-    if submitted == "123456":
+    bypass_code = str(getattr(settings, "SMS_DEBUG_BYPASS_CODE", "") or "").strip()
+    if bypass_code and submitted == bypass_code:
         cache.delete(f"{SMS_VERIFY_FAIL_PREFIX}{phone}")
         cache.delete(lock_key)
         return True, None, 200

@@ -39,7 +39,7 @@ def _agent_log(hypothesis_id: str, message: str, data: dict) -> None:
         pass
     # endregion
 
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-dev-key")
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-placeholder-key")
 DEBUG = os.getenv("DEBUG", "True").lower() == "true"
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
 DEMO_MODE = os.getenv("DEMO_MODE", "true" if DEBUG else "false").lower() == "true"
@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "corsheaders",
     "apps.common",
+    "apps.oauth",
     "apps.core",
     "apps.creator_mgt",
     "apps.sku_mgt",
@@ -116,7 +117,7 @@ DATABASES = {
         "ENGINE": "django.db.backends.mysql",
         "NAME": os.getenv("MYSQL_DATABASE", "sku_db"),
         "USER": os.getenv("MYSQL_USER", "backend"),
-        "PASSWORD": os.getenv("MYSQL_PASSWORD", "backend_dev_pass"),
+        "PASSWORD": os.getenv("MYSQL_PASSWORD", ""),
         "HOST": os.getenv("MYSQL_HOST", "127.0.0.1"),
         "PORT": os.getenv("MYSQL_PORT", "3306"),
         "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "120")),
@@ -132,7 +133,7 @@ DATABASES = {
         "ENGINE": "django.db.backends.mysql",
         "NAME": os.getenv("MYSQL_REPLICA_DATABASE", os.getenv("MYSQL_DATABASE", "sku_db")),
         "USER": os.getenv("MYSQL_REPLICA_USER", os.getenv("MYSQL_USER", "backend")),
-        "PASSWORD": os.getenv("MYSQL_REPLICA_PASSWORD", os.getenv("MYSQL_PASSWORD", "backend_dev_pass")),
+        "PASSWORD": os.getenv("MYSQL_REPLICA_PASSWORD", os.getenv("MYSQL_PASSWORD", "")),
         "HOST": os.getenv("MYSQL_REPLICA_HOST", os.getenv("MYSQL_HOST", "127.0.0.1")),
         "PORT": os.getenv("MYSQL_REPLICA_PORT", os.getenv("MYSQL_PORT", "3306")),
         "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "120")),
@@ -257,6 +258,10 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
 }
 
+AUTH_LOGIN_FAIL_PREFIX = os.getenv("AUTH_LOGIN_FAIL_PREFIX", "login_fail:")
+AUTH_LOGIN_FAIL_MAX_ATTEMPTS = int(os.getenv("AUTH_LOGIN_FAIL_MAX_ATTEMPTS", "5"))
+AUTH_LOGIN_FAIL_LOCK_SECONDS = int(os.getenv("AUTH_LOGIN_FAIL_LOCK_SECONDS", "900"))
+
 BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "").strip()
 SPECTACULAR_SERVERS = []
 if BACKEND_PUBLIC_URL:
@@ -294,6 +299,9 @@ CELERY_BROKER_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/1")
 CELERY_RESULT_BACKEND = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/1")
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_ALWAYS_EAGER = os.getenv("CELERY_TASK_ALWAYS_EAGER", "False").lower() == "true"
+OAUTH_REFRESH_LEAD_SECONDS = int(os.getenv("OAUTH_REFRESH_LEAD_SECONDS", "1800"))
+PLATFORM_API_TIMEOUT_SECONDS = int(os.getenv("PLATFORM_API_TIMEOUT_SECONDS", "10"))
+PLATFORM_API_MAX_RETRIES = int(os.getenv("PLATFORM_API_MAX_RETRIES", "3"))
 TIKTOK_ORDER_POLL_MINUTES = int(os.getenv("TIKTOK_ORDER_POLL_MINUTES", "20"))
 if TIKTOK_ORDER_POLL_MINUTES < 10:
     TIKTOK_ORDER_POLL_MINUTES = 10
@@ -302,7 +310,7 @@ if TIKTOK_ORDER_POLL_MINUTES > 30:
 TIKTOK_ORDERLIST_PAGE_SIZE = int(os.getenv("TIKTOK_ORDERLIST_PAGE_SIZE", "50"))
 CELERY_BEAT_SCHEDULE = {
     "refresh-platform-tokens-every-10-min": {
-        "task": "apps.core.tasks.refresh_expiring_tokens",
+        "task": "apps.oauth.tasks.refresh_expiring_platform_tokens",
         "schedule": 600,
     },
     "inventory-sync-every-5-min": {
@@ -349,6 +357,8 @@ SMS_SEND_DAILY_LIMIT_PHONE = int(os.getenv("SMS_SEND_DAILY_LIMIT_PHONE", "5"))
 SMS_SEND_IP_MIN_INTERVAL_SECONDS = int(os.getenv("SMS_SEND_IP_MIN_INTERVAL_SECONDS", "60"))
 # 发送短信前是否必须校验图形验证码（人机挑战）
 SMS_CAPTCHA_REQUIRED = os.getenv("SMS_CAPTCHA_REQUIRED", "False").lower() == "true"
+SMS_DEBUG_BYPASS_CODE = os.getenv("SMS_DEBUG_BYPASS_CODE", "123456" if DEBUG else "").strip()
+SMS_EXPOSE_CODE_IN_RESPONSE = os.getenv("SMS_EXPOSE_CODE_IN_RESPONSE", "true" if DEBUG else "false").lower() == "true"
 SMS_GLOBAL_HOURLY_LIMIT = int(os.getenv("SMS_GLOBAL_HOURLY_LIMIT", "10000"))
 DEVICE_PHONE_DAILY_LIMIT = int(os.getenv("DEVICE_PHONE_DAILY_LIMIT", "5"))
 SMS_PROVIDER_CHAIN = [i.strip() for i in os.getenv("SMS_PROVIDER_CHAIN", "aliyun,tencent,mock").split(",") if i.strip()]
@@ -369,6 +379,24 @@ TIKTOK_REDIRECT_URI = os.getenv("TIKTOK_REDIRECT_URI", "")
 TIKTOK_SCOPES = os.getenv("TIKTOK_SCOPES", "user.info.basic,video.list")
 TIKTOK_AUTH_BASE_URL = os.getenv("TIKTOK_AUTH_BASE_URL", "https://www.tiktok.com/v2/auth/authorize/")
 TIKTOK_API_BASE_URL = os.getenv("TIKTOK_API_BASE_URL", "https://open.tiktokapis.com/v2/")
+
+SHEIN_CLIENT_ID = os.getenv("SHEIN_CLIENT_ID", "")
+SHEIN_CLIENT_SECRET = os.getenv("SHEIN_CLIENT_SECRET", "")
+SHEIN_REDIRECT_URI = os.getenv("SHEIN_REDIRECT_URI", "")
+SHEIN_AUTH_BASE_URL = os.getenv("SHEIN_AUTH_BASE_URL", "")
+SHEIN_API_BASE_URL = os.getenv("SHEIN_API_BASE_URL", "")
+SHEIN_TOKEN_PATH = os.getenv("SHEIN_TOKEN_PATH", "oauth/token")
+SHEIN_REFRESH_PATH = os.getenv("SHEIN_REFRESH_PATH", "oauth/token/refresh")
+SHEIN_LISTING_PATH = os.getenv("SHEIN_LISTING_PATH", "products/listings")
+SHEIN_RATE_LIMIT_CAPACITY = int(os.getenv("SHEIN_RATE_LIMIT_CAPACITY", "10"))
+SHEIN_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("SHEIN_RATE_LIMIT_WINDOW_SECONDS", "1"))
+
+ALIBABA1688_API_BASE_URL = os.getenv("ALIBABA1688_API_BASE_URL", "")
+ALIBABA1688_APP_KEY = os.getenv("ALIBABA1688_APP_KEY", "")
+ALIBABA1688_APP_SECRET = os.getenv("ALIBABA1688_APP_SECRET", "")
+ALIBABA1688_DETAIL_PATH = os.getenv("ALIBABA1688_DETAIL_PATH", "products/detail")
+ALIBABA1688_RATE_LIMIT_CAPACITY = int(os.getenv("ALIBABA1688_RATE_LIMIT_CAPACITY", "10"))
+ALIBABA1688_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("ALIBABA1688_RATE_LIMIT_WINDOW_SECONDS", "1"))
 
 # 物流聚合（17Track / 快递100）
 LOGISTICS_AGGREGATOR_PROVIDER = os.getenv("LOGISTICS_AGGREGATOR_PROVIDER", "17track")

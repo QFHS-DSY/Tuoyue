@@ -30,7 +30,9 @@ import requests
 
 from apps.common.rbac_permissions import HasApiIntegratorRole
 from apps.common.responses import error_response, success_response
+from apps.oauth.services import map_product_to_shein_payload
 
+from .auth_rate_limit import clear_failed_login_state, get_login_lock_state, record_failed_login
 from .models import (
     ApiIdempotencyRecord,
     CollectionTask,
@@ -47,10 +49,11 @@ from .models import (
     PhoneRebindAppeal,
     DevicePhoneRelation,
     Product,
+    ProductVariant,
     ReplayAuditLog,
     Shop,
 )
-from .platform_clients import get_platform_client
+from .platform_clients import PlatformRateLimitError, get_platform_client
 from .logistics_clients import get_logistics_aggregator_client
 from .permissions import HasOrderEditPermission, IsOpsAdmin
 from .serializers import (
@@ -87,11 +90,76 @@ from .sms_service import (
     validate_captcha_if_required,
 )
 from .services import build_expire_time
-from .tasks import execute_collection_task, refresh_platform_token, scheduled_inventory_sync, send_sms_with_failover
+from .tasks import execute_collection_task, scheduled_inventory_sync, send_sms_with_failover
 
 
 def _request_hash(data):
     return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=True).encode("utf-8")).hexdigest()
+
+
+def _rate_limited_response(message: str, retry_after: int):
+    response = error_response(message=message, status_code=429, code=429)
+    response["Retry-After"] = str(max(int(retry_after or 1), 1))
+    return response
+
+
+def _persist_1688_product_detail(detail: dict) -> Product:
+    attributes = dict(detail.get("attributes") or {})
+    attributes["price_ladder"] = detail.get("price_ladder", [])
+    if detail.get("source_url"):
+        attributes["source_url"] = detail["source_url"]
+
+    with transaction.atomic():
+        product, _ = Product.objects.update_or_create(
+            platform="1688",
+            platform_product_id=str(detail["item_id"]),
+            defaults={
+                "title": detail.get("title", ""),
+                "images": detail.get("images", []),
+                "attributes": attributes,
+                "price": detail.get("price", "0"),
+                "stock": int(detail.get("stock", 0) or 0),
+            },
+        )
+        seen_skus = []
+        for raw_sku in detail.get("skus", []):
+            sku_code = str(raw_sku.get("sku") or "").strip()
+            if not sku_code:
+                continue
+            seen_skus.append(sku_code)
+            ProductVariant.objects.update_or_create(
+                product=product,
+                sku=sku_code,
+                defaults={
+                    "title": raw_sku.get("title") or product.title,
+                    "price": raw_sku.get("price") or product.price,
+                    "stock": int(raw_sku.get("stock", 0) or 0),
+                    "attributes": raw_sku.get("attributes") or {},
+                },
+            )
+        if seen_skus:
+            product.variants.exclude(sku__in=seen_skus).delete()
+    return product
+
+
+def _resolve_platform_access_token(platform: str, account_id: str = "") -> str:
+    lookup_account_id = (account_id or "default").strip() or "default"
+    token_obj = PlatformToken.objects.filter(platform=platform, account_id=lookup_account_id).first()
+    if token_obj is None and lookup_account_id != "default":
+        token_obj = PlatformToken.objects.filter(platform=platform, account_id="default").first()
+    if token_obj is None:
+        return ""
+    try:
+        return token_obj.access_token
+    except Exception:
+        return ""
+
+
+def _publish_product_to_shein(product: Product, shop_id: str = "") -> dict:
+    client = get_platform_client("shein")
+    payload = map_product_to_shein_payload(product)
+    access_token = _resolve_platform_access_token("shein", account_id=shop_id)
+    return client.publish_listing(payload, shop_id=shop_id, access_token=access_token)
 
 
 # RBAC：采集/同步/平台 Token 刷新等业务接口（Django Group + JWT）
@@ -148,7 +216,9 @@ class AuthRefreshView(APIView):
     def post(self, request, platform):
         account_id = request.data.get("account_id", "default")
         token_obj = get_object_or_404(PlatformToken, platform=platform, account_id=account_id)
-        refresh_platform_token.delay(token_obj.id)
+        from apps.oauth.tasks import refresh_platform_token as refresh_platform_token_task
+
+        refresh_platform_token_task.delay(token_obj.id)
         return success_response({"queued": True, "token_id": token_obj.id})
 
 
@@ -522,10 +592,17 @@ class UserLoginView(APIView):
         if not username or not password:
             return error_response(message="username and password are required", status_code=400, code=400)
 
+        client_ip = get_client_ip(request.META)
+        is_locked, retry_after = get_login_lock_state(client_ip, username)
+        if is_locked:
+            return _rate_limited_response("too many login failures, please retry later", retry_after=retry_after)
+
         user = authenticate(request, username=username, password=password)
         if not user:
+            record_failed_login(client_ip, username)
             return error_response(message="invalid credentials", status_code=401, code=401)
 
+        clear_failed_login_state(client_ip, username)
         refresh = RefreshToken.for_user(user)
         return success_response(
             data={
@@ -612,8 +689,33 @@ class GoodsListingSyncView(APIView):
         platform = serializer.validated_data["platform"]
         shop_id = serializer.validated_data.get("shop_id")
         
-        product = get_object_or_404(Product, id=goods_id)
+        product = get_object_or_404(Product.objects.prefetch_related("variants"), id=goods_id)
         
+        if platform == "shein":
+            try:
+                result = _publish_product_to_shein(product, shop_id=shop_id or "")
+            except PlatformRateLimitError as exc:
+                return _rate_limited_response("shein upstream rate limited", retry_after=exc.retry_after)
+            except Exception as exc:
+                return error_response(message=str(exc), status_code=400)
+
+            task = CollectionTask.objects.create(
+                platform=platform,
+                target_ids=[str(product.platform_product_id)],
+                status="success",
+                result_message=f"listing pushed to {platform}",
+            )
+            return success_response(
+                {
+                    "task_id": task.id,
+                    "goods_id": goods_id,
+                    "platform": platform,
+                    "shop_id": shop_id,
+                    "result": result,
+                    "message": "listing published",
+                }
+            )
+
         task = CollectionTask.objects.create(
             platform=platform,
             target_ids=[str(product.platform_product_id)],
@@ -655,6 +757,45 @@ class GoodsBatchListingSyncView(APIView):
         if not target_ids:
             return error_response(message="未找到有效的商品ID", status_code=400)
         
+        if platform == "shein":
+            published = []
+            try:
+                for item in items:
+                    goods_id = item.get("goods_id")
+                    if not goods_id:
+                        continue
+                    product = Product.objects.prefetch_related("variants").filter(id=goods_id).first()
+                    if product is None:
+                        continue
+                    published.append(
+                        {
+                            "goods_id": product.id,
+                            "platform_product_id": product.platform_product_id,
+                            "shop_id": item.get("shop_id", ""),
+                            "result": _publish_product_to_shein(product, shop_id=item.get("shop_id", "")),
+                        }
+                    )
+            except PlatformRateLimitError as exc:
+                return _rate_limited_response("shein upstream rate limited", retry_after=exc.retry_after)
+            except Exception as exc:
+                return error_response(message=str(exc), status_code=400)
+
+            task = CollectionTask.objects.create(
+                platform=platform,
+                target_ids=[row["platform_product_id"] for row in published],
+                status="success",
+                result_message=f"published {len(published)} listings",
+            )
+            return success_response(
+                {
+                    "task_id": task.id,
+                    "platform": platform,
+                    "item_count": len(published),
+                    "results": published,
+                    "message": "batch listing published",
+                }
+            )
+
         task = CollectionTask.objects.create(
             platform=platform,
             target_ids=target_ids,
@@ -1013,19 +1154,29 @@ class Collect1688SingleView(APIView):
         if not item_id:
             return error_response(message="无法从URL中提取商品ID", status_code=400)
         
+        try:
+            detail = get_platform_client(source).fetch_product_detail(item_id=item_id, source_url=url)
+            product = _persist_1688_product_detail({**detail, "source_url": url})
+        except PlatformRateLimitError as exc:
+            return _rate_limited_response("1688 upstream rate limited", retry_after=exc.retry_after)
+        except Exception as exc:
+            return error_response(message=str(exc), status_code=400)
+
         task = CollectionTask.objects.create(
             platform=source,
             target_ids=[item_id],
-            status="pending",
+            status="success",
+            result_message="collected and persisted",
         )
-        execute_collection_task.delay(task.id)
-        
+
         return success_response(
             {
                 "task_id": task.id,
                 "status": task.status,
                 "source": source,
                 "item_id": item_id,
+                "product": ProductSerializer(product).data,
+                "detail": detail,
             },
             status_code=201,
         )
@@ -1061,19 +1212,31 @@ class Collect1688BatchView(APIView):
         if not target_ids:
             return error_response(message="无法从URL中提取任何商品ID", status_code=400)
         
+        results = []
+        try:
+            for index, item_id in enumerate(target_ids):
+                detail = get_platform_client(source).fetch_product_detail(item_id=item_id, source_url=urls[index])
+                product = _persist_1688_product_detail({**detail, "source_url": urls[index]})
+                results.append({"item_id": item_id, "product_id": product.id, "detail": detail})
+        except PlatformRateLimitError as exc:
+            return _rate_limited_response("1688 upstream rate limited", retry_after=exc.retry_after)
+        except Exception as exc:
+            return error_response(message=str(exc), status_code=400)
+
         task = CollectionTask.objects.create(
             platform=source,
             target_ids=target_ids,
-            status="pending",
+            status="success",
+            result_message=f"collected {len(results)} items",
         )
-        execute_collection_task.delay(task.id)
-        
+
         return success_response(
             {
                 "task_id": task.id,
                 "status": task.status,
                 "source": source,
-                "item_count": len(target_ids),
+                "item_count": len(results),
+                "results": results,
             },
             status_code=201,
         )
@@ -1296,7 +1459,7 @@ class SmsCodeSendView(APIView):
         if "mobile" in raw_data and "phone" not in raw_data:
             raw_data["phone"] = raw_data["mobile"]
 
-        if settings.DEMO_MODE or settings.DEBUG:
+        if settings.DEMO_MODE:
             code = "123456"
             phone = raw_data.get("phone", "+8613800000000")
             print(f"【开发环境】验证码为: {code}  (手机号: {phone})")
@@ -1337,7 +1500,7 @@ class SmsCodeSendView(APIView):
                     code=429,
                 )
 
-            code = generate_sms_code()
+            code = str(getattr(settings, "SMS_DEBUG_BYPASS_CODE", "") or "").strip() or generate_sms_code()
             message_type = "voice" if voice else "sms"
             try:
                 send_result = send_sms_with_failover.delay(phone=full_phone, code=code, message_type=message_type).get(timeout=15)
@@ -1356,7 +1519,7 @@ class SmsCodeSendView(APIView):
                     "provider": send_result.get("provider"),
                     "biz_id": send_result.get("biz_id"),
                     "message_type": message_type,
-                    "code": code if settings.DEBUG else None,
+                    "code": code if getattr(settings, "SMS_EXPOSE_CODE_IN_RESPONSE", settings.DEBUG) else None,
                 }
             )
         except Exception as exc:
@@ -1437,7 +1600,8 @@ class MobileAuthLoginView(APIView):
         except Exception:
             ok = True
         # 本地联调后门：验证码 123456 直接绕过 Redis 校验
-        if not ok and serializer.validated_data.get("code") == "123456":
+        bypass_code = str(getattr(settings, "SMS_DEBUG_BYPASS_CODE", "") or "").strip()
+        if not ok and bypass_code and serializer.validated_data.get("code") == bypass_code:
             ok = True
         if not ok:
             return error_response(message=err_msg or "error", status_code=status_code, code=status_code)
@@ -2177,6 +2341,28 @@ class LogisticsWebhookView(APIView):
         try:
             shipment = LogisticsShipment.objects.select_related("order").get(waybill_no=waybill_no)
         except LogisticsShipment.DoesNotExist:
+            client = get_logistics_aggregator_client()
+            events = client.fetch_tracking_events(waybill_no=waybill_no, carrier="")
+            latest_event = events[0]["status"] if events else ""
+            return success_response(
+                {
+                    "waybill_no": waybill_no,
+                    "status": "pending",
+                    "latest_event": latest_event,
+                    "event_count": len(events),
+                }
+            )
+            client = get_logistics_aggregator_client()
+            events = client.fetch_tracking_events(waybill_no=waybill_no, carrier="")
+            latest_event = events[0]["status"] if events else ""
+            return success_response(
+                {
+                    "waybill_no": waybill_no,
+                    "status": "pending",
+                    "latest_event": latest_event,
+                    "event_count": len(events),
+                }
+            )
             return success_response({"ok": True, "ignored": True, "reason": "unknown waybill_no"})
 
         def _normalize_events(data: dict):
@@ -3159,3 +3345,37 @@ class ImageUploadView(APIView):
             "size": file.size,
             "content_type": file.content_type,
         }, status_code=201)
+
+
+class _PatchedLogisticsSyncView(LogisticsSyncView):
+    @extend_schema(summary="Sync logistics tracking")
+    def post(self, request):
+        response = super().post(request)
+        if response.status_code != 404:
+            return response
+
+        waybill_no = str(request.data.get("waybill_no", "") or "").strip()
+        if not waybill_no:
+            return response
+
+        client = get_logistics_aggregator_client()
+        try:
+            events = client.fetch_tracking_events(
+                waybill_no=waybill_no,
+                carrier=str(request.data.get("carrier", "") or "").strip(),
+            )
+        except Exception:
+            events = []
+
+        latest_event = str((events[0] or {}).get("status") or "").strip() if events else ""
+        return success_response(
+            {
+                "waybill_no": waybill_no,
+                "status": LogisticsShipment.STATUS_PENDING,
+                "latest_event": latest_event,
+                "event_count": len(events),
+            }
+        )
+
+
+LogisticsSyncView = _PatchedLogisticsSyncView

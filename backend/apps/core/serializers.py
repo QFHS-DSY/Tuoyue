@@ -23,7 +23,7 @@ from .models import (
 
 
 class CollectionTaskCreateSerializer(serializers.Serializer):
-    platform = serializers.ChoiceField(choices=["tiktok", "amazon", "1688"])
+    platform = serializers.ChoiceField(choices=["tiktok", "amazon", "shein", "1688"])
     target_ids = serializers.ListField(child=serializers.CharField(), allow_empty=False)
 
 
@@ -39,13 +39,13 @@ class Collect1688BatchSerializer(serializers.Serializer):
 
 class GoodsListingSerializer(serializers.Serializer):
     goods_id = serializers.IntegerField()
-    platform = serializers.ChoiceField(choices=["tiktok", "amazon", "1688"])
+    platform = serializers.ChoiceField(choices=["tiktok", "amazon", "shein", "1688"])
     shop_id = serializers.CharField(required=False, allow_blank=True)
 
 
 class GoodsBatchListingSerializer(serializers.Serializer):
     items = serializers.ListField(child=serializers.DictField(), allow_empty=False)
-    platform = serializers.ChoiceField(choices=["tiktok", "amazon", "1688"])
+    platform = serializers.ChoiceField(choices=["tiktok", "amazon", "shein", "1688"])
 
 
 class CollectionTaskSerializer(serializers.ModelSerializer):
@@ -293,7 +293,7 @@ class SmsCodeSendSerializer(serializers.Serializer):
 
 
 class SmsCodeVerifySerializer(serializers.Serializer):
-    phone = serializers.RegexField(regex=r"^\d{6,20}$")
+    phone = serializers.RegexField(regex=r"^\+?\d{6,20}$")
     code = serializers.RegexField(regex=r"^\d{4,6}$")
 
 

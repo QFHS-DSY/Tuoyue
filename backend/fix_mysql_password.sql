@@ -1,3 +1,4 @@
-CREATE USER IF NOT EXISTS 'admin_erp'@'%' IDENTIFIED BY 'Bzh200257.';
-GRANT ALL PRIVILEGES ON sku_db.* TO 'admin_erp'@'%';
+-- Replace CHANGE_ME_APP_PASSWORD before running this script.
+CREATE USER IF NOT EXISTS 'backend'@'%' IDENTIFIED BY 'CHANGE_ME_APP_PASSWORD';
+GRANT ALL PRIVILEGES ON sku_db.* TO 'backend'@'%';
 FLUSH PRIVILEGES;

@@ -1,52 +1,49 @@
-# ============================================================
-# 跨境电商ERP — 后端多阶段构建 (Production)
-# Stage 1: build-essential + mysqlclient 编译依赖
-# Stage 2: 轻量运行镜像
-# ============================================================
+FROM python:3.11-slim-bullseye AS builder
 
-# ─── Stage 1: Builder ───
-FROM python:3.12-slim AS builder
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    VENV_PATH=/opt/venv
 
-# 安装编译依赖
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        build-essential \
-        default-libmysqlclient-dev \
-        pkg-config \
-    && rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends build-essential default-libmysqlclient-dev pkg-config && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 
-RUN python -m venv /build/venv
-ENV PATH="/build/venv/bin:$PATH"
+RUN python -m venv "${VENV_PATH}"
+ENV PATH="${VENV_PATH}/bin:${PATH}"
 
-COPY requirements.txt /build/
-RUN pip install --no-cache-dir -r /build/requirements.txt
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
-# ─── Stage 2: Runtime ───
-FROM python:3.12-slim
 
-# 仅安装 mysql 运行时库（不需要 build-essential）
+FROM python:3.11-slim-bullseye
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    VENV_PATH=/opt/venv \
+    PATH="/opt/venv/bin:${PATH}"
+
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        default-libmysqlclient-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# 从 builder 阶段复制完整 venv
-COPY --from=builder /build/venv /venv
-ENV PATH="/venv/bin:$PATH"
+    apt-get install -y --no-install-recommends default-libmysqlclient-dev procps && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd --system app && \
+    useradd --system --gid app --home /app --shell /usr/sbin/nologin app
 
 WORKDIR /app
 
-# 复制项目代码
-COPY . /app/
+COPY --from=builder /opt/venv /opt/venv
+COPY . /app
 
-# 创建必要的运行时目录
-RUN mkdir -p /app/logs /app/exports /app/uploads/images /app/staticfiles
+RUN mkdir -p /app/logs /app/exports /app/uploads/images /app/staticfiles && \
+    chown -R app:app /app
 
-# 暴露 API 端口
+USER app
+
 EXPOSE 8000
 
-# 默认启动命令（由 backend-entrypoint.sh 覆盖）
-# 生产环境通过 docker-compose 注入 entrypoint
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=5 \
+  CMD python -c "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health/').status == 200 else 1)"
+
 CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "myproject.asgi:application"]

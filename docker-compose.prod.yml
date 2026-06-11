@@ -1,0 +1,163 @@
+version: "3.9"
+
+x-backend-env: &backend-env
+  DJANGO_SETTINGS_MODULE: myproject.settings_production
+  DEBUG: "False"
+  DEMO_MODE: ${DEMO_MODE:-False}
+  DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+  ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
+  BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:-}
+  MYSQL_DATABASE: ${MYSQL_DATABASE}
+  MYSQL_USER: ${MYSQL_USER}
+  MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+  MYSQL_HOST: mysql
+  MYSQL_PORT: "3306"
+  REDIS_URL: redis://redis:6379/1
+  CHANNEL_REDIS_URL: redis://redis:6379/2
+  DB_FAILOPEN_SQLITE: "False"
+  CACHE_FAILOPEN_LOCMEM: "False"
+  CELERY_TASK_ALWAYS_EAGER: "False"
+  CELERY_WORKER_CONCURRENCY: ${CELERY_WORKER_CONCURRENCY:-4}
+  FERNET_KEY: ${FERNET_KEY}
+  CORS_ALLOW_ALL_ORIGINS: ${CORS_ALLOW_ALL_ORIGINS:-False}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+  CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
+  AUTH_LOGIN_FAIL_MAX_ATTEMPTS: ${AUTH_LOGIN_FAIL_MAX_ATTEMPTS:-5}
+  AUTH_LOGIN_FAIL_LOCK_SECONDS: ${AUTH_LOGIN_FAIL_LOCK_SECONDS:-900}
+  OAUTH_REFRESH_LEAD_SECONDS: ${OAUTH_REFRESH_LEAD_SECONDS:-1800}
+  PLATFORM_API_TIMEOUT_SECONDS: ${PLATFORM_API_TIMEOUT_SECONDS:-10}
+  PLATFORM_API_MAX_RETRIES: ${PLATFORM_API_MAX_RETRIES:-3}
+  TIKTOK_CLIENT_KEY: ${TIKTOK_CLIENT_KEY:-}
+  TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:-}
+  TIKTOK_REDIRECT_URI: ${TIKTOK_REDIRECT_URI:-}
+  TIKTOK_SCOPES: ${TIKTOK_SCOPES:-}
+  TIKTOK_AUTH_BASE_URL: ${TIKTOK_AUTH_BASE_URL:-}
+  TIKTOK_API_BASE_URL: ${TIKTOK_API_BASE_URL:-}
+  SHEIN_CLIENT_ID: ${SHEIN_CLIENT_ID:-}
+  SHEIN_CLIENT_SECRET: ${SHEIN_CLIENT_SECRET:-}
+  SHEIN_REDIRECT_URI: ${SHEIN_REDIRECT_URI:-}
+  SHEIN_AUTH_BASE_URL: ${SHEIN_AUTH_BASE_URL:-}
+  SHEIN_API_BASE_URL: ${SHEIN_API_BASE_URL:-}
+  SHEIN_TOKEN_PATH: ${SHEIN_TOKEN_PATH:-oauth/token}
+  SHEIN_REFRESH_PATH: ${SHEIN_REFRESH_PATH:-oauth/token/refresh}
+  SHEIN_LISTING_PATH: ${SHEIN_LISTING_PATH:-products/listings}
+  SHEIN_RATE_LIMIT_CAPACITY: ${SHEIN_RATE_LIMIT_CAPACITY:-10}
+  SHEIN_RATE_LIMIT_WINDOW_SECONDS: ${SHEIN_RATE_LIMIT_WINDOW_SECONDS:-1}
+  ALIBABA1688_API_BASE_URL: ${ALIBABA1688_API_BASE_URL:-}
+  ALIBABA1688_APP_KEY: ${ALIBABA1688_APP_KEY:-}
+  ALIBABA1688_APP_SECRET: ${ALIBABA1688_APP_SECRET:-}
+  ALIBABA1688_DETAIL_PATH: ${ALIBABA1688_DETAIL_PATH:-products/detail}
+  ALIBABA1688_RATE_LIMIT_CAPACITY: ${ALIBABA1688_RATE_LIMIT_CAPACITY:-10}
+  ALIBABA1688_RATE_LIMIT_WINDOW_SECONDS: ${ALIBABA1688_RATE_LIMIT_WINDOW_SECONDS:-1}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-4G}
+      - --max-connections=300
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment: *backend-env
+    command: ["daphne", "-b", "0.0.0.0", "-p", "8000", "myproject.asgi:application"]
+    ports:
+      - "${BACKEND_PUBLISH_PORT:-8000}:8000"
+    networks:
+      - internal
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment: *backend-env
+    command:
+      [
+        "sh",
+        "-c",
+        "celery -A myproject worker -l info --concurrency ${CELERY_WORKER_CONCURRENCY:-4} -Q default,selection",
+      ]
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'celery.*worker' >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment: *backend-env
+    command: ["sh", "-c", "celery -A myproject beat -l info"]
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'celery.*beat' >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  mysql_data:
+  redis_data:
+
+networks:
+  internal:
+    driver: bridge

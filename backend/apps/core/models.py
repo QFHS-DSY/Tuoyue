@@ -9,6 +9,7 @@ from .services import TokenCipherService
 PLATFORM_CHOICES = (
     ("tiktok", "TikTok Shop"),
     ("amazon", "Amazon"),
+    ("shein", "Shein"),
     ("1688", "1688"),
 )
 

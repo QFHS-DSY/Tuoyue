@@ -1,7 +1,7 @@
 param(
     [string]$DbName = "sku_db",
     [string]$DbUser = "backend",
-    [string]$DbPassword = "backend_dev_pass",
+    [string]$DbPassword = "",
     [string]$DbHost = "127.0.0.1",
     [string]$DbPort = "3306",
     [int]$SeedCount = 5,

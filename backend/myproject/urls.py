@@ -14,6 +14,7 @@ urlpatterns = [
     path("swagger/", SpectacularSwaggerView.as_view(url_name="schema", **_SCHEMA_AUTH), name="swagger-ui"),
     path("redoc/", SpectacularRedocView.as_view(url_name="schema", **_SCHEMA_AUTH), name="redoc"),
     path("metrics", metrics_view, name="metrics"),
+    path("api/sku/", include("apps.sku_mgt.urls")),
     # 核心业务 API（含 _common_urls / _v1_real_urls / _demo_urls / _business_auth_urls）
     # 生成路径示例：/api/orders/、/api/v1/goods/list、/api/dashboard/stats
     path("api/", include("apps.core.urls")),

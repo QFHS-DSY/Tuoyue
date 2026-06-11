@@ -1,0 +1,92 @@
+name: backend-ci
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - ".github/workflows/ci.yml"
+      - "docker-compose.prod.yml"
+      - "deploy.sh"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/ci.yml"
+      - "docker-compose.prod.yml"
+      - "deploy.sh"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Syntax lint
+        run: python -m compileall -q apps myproject
+
+  backend-test:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: sku_db
+          MYSQL_USER: backend
+          MYSQL_PASSWORD: ci_only_password
+        ports:
+          - "3306:3306"
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - "6379:6379"
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DJANGO_SETTINGS_MODULE: myproject.settings_integration_test
+      DJANGO_SECRET_KEY: ci-secret-key
+      MYSQL_DATABASE: sku_db
+      MYSQL_USER: backend
+      MYSQL_PASSWORD: ci_only_password
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: "3306"
+      REDIS_URL: redis://127.0.0.1:6379/1
+      CHANNEL_REDIS_URL: redis://127.0.0.1:6379/2
+      FERNET_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      CACHE_FAILOPEN_LOCMEM: "False"
+      DB_FAILOPEN_SQLITE: "False"
+      CELERY_TASK_ALWAYS_EAGER: "True"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential default-libmysqlclient-dev pkg-config
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Django check
+        run: python manage.py check --settings=myproject.settings_integration_test
+      - name: Pytest
+        run: pytest --ds=myproject.settings_integration_test apps/core/test_taskbook_hardening.py
