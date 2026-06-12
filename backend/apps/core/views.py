@@ -6,6 +6,7 @@ import time
 import random
 import datetime
 import socket
+import logging
 from pathlib import Path
 from typing import Any, Dict
 from datetime import timedelta
@@ -69,6 +70,7 @@ from .serializers import (
     ProductSerializer,
     SmsCodeSendSerializer,
     SmsCodeVerifySerializer,
+    SmsRegisterSerializer,
     MobileAuthSerializer,
     AccountDeleteSerializer,
     PhoneRebindAppealSerializer,
@@ -93,6 +95,9 @@ from .services import build_expire_time
 from .tasks import execute_collection_task, scheduled_inventory_sync, send_sms_with_failover
 
 
+logger = logging.getLogger(__name__)
+
+
 def _request_hash(data):
     return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=True).encode("utf-8")).hexdigest()
 
@@ -101,6 +106,56 @@ def _rate_limited_response(message: str, retry_after: int):
     response = error_response(message=message, status_code=429, code=429)
     response["Retry-After"] = str(max(int(retry_after or 1), 1))
     return response
+
+
+def _sync_user_profile_phone(user, phone: str) -> None:
+    normalized_phone = str(phone or "").strip()
+    if not normalized_phone:
+        return
+    try:
+        from apps.settings_sys.models import UserProfile
+
+        profile, created = UserProfile.objects.get_or_create(user=user, defaults={"phone": normalized_phone})
+        if not created and not str(profile.phone or "").strip():
+            profile.phone = normalized_phone
+            profile.save(update_fields=["phone"])
+    except Exception:
+        return
+
+
+def _resolve_login_username(raw_username: str, country_code: str = "") -> str:
+    username = str(raw_username or "").strip()
+    if not username or not username.isdigit():
+        return username
+
+    bindings = UserPhoneBinding.objects.select_related("user").filter(phone_number=username)
+    binding = None
+    if country_code:
+        binding = bindings.filter(country_code=country_code).first()
+    if not binding:
+        binding = bindings.first()
+    return binding.user.username if binding else username
+
+
+def _debug_sms_bypass_enabled(submitted_code: str) -> bool:
+    bypass_code = str(getattr(settings, "SMS_DEBUG_BYPASS_CODE", "") or "").strip()
+    return bool(getattr(settings, "DEBUG", False) and bypass_code and str(submitted_code).strip() == bypass_code)
+
+
+def _verify_sms_code_or_response(phone: str, submitted_code: str, default_error: str = "验证码错误"):
+    if _debug_sms_bypass_enabled(submitted_code):
+        return True, None
+
+    try:
+        ok, err_msg, status_code = verify_sms_code_with_lua(phone, submitted_code)
+    except Exception:
+        logger.exception("sms verification backend unavailable phone=%s", phone)
+        return False, error_response(message="验证码服务暂不可用，请稍后重试", status_code=503, code=503)
+
+    if not ok:
+        return False, error_response(message=err_msg or default_error, status_code=status_code, code=status_code)
+
+    return True, None
 
 
 def _persist_1688_product_detail(detail: dict) -> Product:
@@ -555,6 +610,66 @@ class UserRegisterView(APIView):
     @extend_schema(summary="用户注册")
     def post(self, request):
         payload = request.data if isinstance(request.data, dict) else {}
+        sms_phone = str(payload.get("mobile") or payload.get("phone") or "").strip()
+        sms_code = str(payload.get("sms_code") or payload.get("code") or "").strip()
+        if sms_phone and sms_code:
+            serializer = SmsRegisterSerializer(data=payload)
+            serializer.is_valid(raise_exception=True)
+            if not serializer.validated_data["agreed_privacy"]:
+                return error_response(message="必须同意隐私协议", status_code=400, code=400)
+
+            country_code = serializer.validated_data["country_code"]
+            mobile = serializer.validated_data["mobile"]
+            full_phone = f"+{country_code}{mobile}"
+            verified, error_resp = _verify_sms_code_or_response(full_phone, serializer.validated_data["code"])
+            if not verified:
+                return error_resp
+
+            User = get_user_model()
+            with transaction.atomic():
+                existing_binding = UserPhoneBinding.objects.select_for_update().filter(
+                    country_code=country_code,
+                    phone_number=mobile,
+                ).first()
+                if existing_binding:
+                    return error_response(message="该手机号已注册", status_code=400, code=400)
+
+                username = mobile
+                if User.objects.filter(username=username).exists():
+                    username = f"u_{country_code}_{mobile}_{int(time.time())}"
+
+                user = User.objects.create_user(
+                    username=username,
+                    password=serializer.validated_data["password"],
+                )
+                UserPhoneBinding.objects.create(
+                    user=user,
+                    country_code=country_code,
+                    phone_number=mobile,
+                    is_primary=True,
+                )
+
+            _sync_user_profile_phone(user, mobile)
+            refresh = RefreshToken.for_user(user)
+            return success_response(
+                data={
+                    "created": True,
+                    "access": str(refresh.access_token),
+                    "refresh": str(refresh),
+                    "access_token": str(refresh.access_token),
+                    "refresh_token": str(refresh),
+                    "user": {
+                        "id": user.id,
+                        "username": user.username,
+                        "mobile": _mask_mobile(full_phone),
+                        "country_code": country_code,
+                    },
+                },
+                code=200,
+                status_code=200,
+                message="registered",
+            )
+
         username = (payload.get("username") or payload.get("phone") or "").strip()
         password = payload.get("password") or ""
         if not username or not password:
@@ -570,6 +685,8 @@ class UserRegisterView(APIView):
             data={
                 "access_token": str(refresh.access_token),
                 "refresh_token": str(refresh),
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
                 "user": {"id": user.id, "username": user.username},
             },
             code=200,
@@ -592,12 +709,14 @@ class UserLoginView(APIView):
         if not username or not password:
             return error_response(message="username and password are required", status_code=400, code=400)
 
+        country_code = str(payload.get("country_code") or "").strip()
         client_ip = get_client_ip(request.META)
         is_locked, retry_after = get_login_lock_state(client_ip, username)
         if is_locked:
             return _rate_limited_response("too many login failures, please retry later", retry_after=retry_after)
 
-        user = authenticate(request, username=username, password=password)
+        auth_username = _resolve_login_username(username, country_code=country_code)
+        user = authenticate(request, username=auth_username, password=password)
         if not user:
             record_failed_login(client_ip, username)
             return error_response(message="invalid credentials", status_code=401, code=401)
@@ -606,6 +725,8 @@ class UserLoginView(APIView):
         refresh = RefreshToken.for_user(user)
         return success_response(
             data={
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
                 "access_token": str(refresh.access_token),
                 "refresh_token": str(refresh),
                 "user": {"id": user.id, "username": user.username},
@@ -1472,21 +1593,21 @@ class SmsCodeSendView(APIView):
                 "code": code,
             })
 
+        serializer = SmsCodeSendSerializer(data=raw_data)
+        serializer.is_valid(raise_exception=True)
+        phone = serializer.validated_data["phone"]
+        country_code = serializer.validated_data.get("country_code", "86")
+        full_phone = f"+{country_code}{phone}"
+        voice = serializer.validated_data.get("voice", False)
+
+        captcha_err = validate_captcha_if_required(
+            serializer.validated_data.get("captcha_id") or None,
+            serializer.validated_data.get("captcha_answer"),
+        )
+        if captcha_err:
+            return error_response(message=captcha_err, status_code=400)
+
         try:
-            serializer = SmsCodeSendSerializer(data=raw_data)
-            serializer.is_valid(raise_exception=True)
-            phone = serializer.validated_data["phone"]
-            country_code = serializer.validated_data.get("country_code", "86")
-            full_phone = f"+{country_code}{phone}"
-            voice = serializer.validated_data.get("voice", False)
-
-            captcha_err = validate_captcha_if_required(
-                serializer.validated_data.get("captcha_id") or None,
-                serializer.validated_data.get("captcha_answer"),
-            )
-            if captcha_err:
-                return error_response(message=captcha_err, status_code=400)
-
             global_limit_err = check_and_incr_global_sms_limit()
             if global_limit_err:
                 return error_response(message=global_limit_err, status_code=429, code=429)
@@ -1502,13 +1623,11 @@ class SmsCodeSendView(APIView):
 
             code = str(getattr(settings, "SMS_DEBUG_BYPASS_CODE", "") or "").strip() or generate_sms_code()
             message_type = "voice" if voice else "sms"
-            try:
-                send_result = send_sms_with_failover.delay(phone=full_phone, code=code, message_type=message_type).get(timeout=15)
-            except SmsSendError as exc:
-                return error_response(message=str(exc), status_code=400)
-            except Exception:
-                send_result = {"provider": "local_fallback", "biz_id": ""}
-
+            send_result = send_sms_with_failover.delay(
+                phone=full_phone,
+                code=code,
+                message_type=message_type,
+            ).get(timeout=15)
             store_sms_code(full_phone, code)
             record_send_success(full_phone, client_ip)
             ttl = int(getattr(settings, "SMS_CODE_TTL_SECONDS", 300))
@@ -1522,21 +1641,11 @@ class SmsCodeSendView(APIView):
                     "code": code if getattr(settings, "SMS_EXPOSE_CODE_IN_RESPONSE", settings.DEBUG) else None,
                 }
             )
-        except Exception as exc:
-            # 兜底：任何异常不抛 500，打印验证码到控制台后返回 Mock 成功
-            code = "123456"
-            phone = raw_data.get("phone", "+8613800000000")
-            print(f"【开发环境-异常降级】验证码为: {code}  (手机号: {phone})")
-            print(f"  → 异常: {exc}")
-            return success_response({
-                "phone": phone,
-                "expires_in": 300,
-                "provider": "mock_fallback",
-                "biz_id": "",
-                "message_type": "sms",
-                "code": code,
-                "message": "验证码发送成功(Mock)",
-            })
+        except SmsSendError as exc:
+            return error_response(message=str(exc), status_code=400)
+        except Exception:
+            logger.exception("sms send backend unavailable phone=%s", full_phone)
+            return error_response(message="短信服务暂不可用，请稍后重试", status_code=503, code=503)
 
 
 class SmsCodeVerifyView(APIView):
@@ -1550,13 +1659,9 @@ class SmsCodeVerifyView(APIView):
         serializer.is_valid(raise_exception=True)
         phone = serializer.validated_data["phone"]
         code = serializer.validated_data["code"]
-        try:
-            ok, err_msg, status_code = verify_sms_code_with_lua(phone, code)
-        except Exception:
-            # 无 Redis 时跳过真实校验（已无法存储验证码），直接通过
-            ok = True
-        if not ok:
-            return error_response(message=err_msg or "error", status_code=status_code, code=status_code)
+        verified, error_resp = _verify_sms_code_or_response(phone, code, default_error="验证码错误")
+        if not verified:
+            return error_resp
         return success_response({"verified": True, "phone": phone})
 
 
@@ -1595,16 +1700,9 @@ class MobileAuthLoginView(APIView):
         if device_id and is_device_blacklisted(device_id):
             return error_response(message="设备已被风控拦截", status_code=403, code=403)
 
-        try:
-            ok, err_msg, status_code = verify_sms_code_with_lua(full_phone, serializer.validated_data["code"])
-        except Exception:
-            ok = True
-        # 本地联调后门：验证码 123456 直接绕过 Redis 校验
-        bypass_code = str(getattr(settings, "SMS_DEBUG_BYPASS_CODE", "") or "").strip()
-        if not ok and bypass_code and serializer.validated_data.get("code") == bypass_code:
-            ok = True
-        if not ok:
-            return error_response(message=err_msg or "error", status_code=status_code, code=status_code)
+        verified, error_resp = _verify_sms_code_or_response(full_phone, serializer.validated_data["code"])
+        if not verified:
+            return error_resp
 
         User = get_user_model()
         with transaction.atomic():
@@ -1628,6 +1726,7 @@ class MobileAuthLoginView(APIView):
                 if blacklisted:
                     return error_response(message="设备触发风控限制", status_code=403, code=403)
 
+        _sync_user_profile_phone(user, mobile)
         token = RefreshToken.for_user(user)
         return success_response(
             {
@@ -1656,9 +1755,9 @@ class UserAccountDeleteView(APIView):
         if not binding:
             return error_response(message="未绑定手机号", status_code=400)
         full_phone = f"+{binding.country_code}{binding.phone_number}"
-        ok, err_msg, status_code = verify_sms_code_with_lua(full_phone, serializer.validated_data["code"])
-        if not ok:
-            return error_response(message=err_msg or "验证码错误", status_code=status_code, code=status_code)
+        verified, error_resp = _verify_sms_code_or_response(full_phone, serializer.validated_data["code"])
+        if not verified:
+            return error_resp
 
         old_username = user.username
         anonymized = f"{old_username}__deleted__{int(time.time())}"

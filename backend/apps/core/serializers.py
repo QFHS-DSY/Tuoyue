@@ -297,6 +297,29 @@ class SmsCodeVerifySerializer(serializers.Serializer):
     code = serializers.RegexField(regex=r"^\d{4,6}$")
 
 
+class SmsRegisterSerializer(serializers.Serializer):
+    mobile = serializers.RegexField(regex=r"^\d{6,20}$", required=False, allow_blank=True)
+    phone = serializers.RegexField(regex=r"^\d{6,20}$", required=False, allow_blank=True)
+    country_code = serializers.RegexField(regex=r"^\d{1,4}$", required=False, default="86")
+    code = serializers.RegexField(regex=r"^\d{4,6}$", required=False, allow_blank=True)
+    sms_code = serializers.RegexField(regex=r"^\d{4,6}$", required=False, allow_blank=True)
+    password = serializers.CharField(min_length=6, max_length=128, write_only=True)
+    agreed_privacy = serializers.BooleanField(required=False, default=True)
+
+    def validate(self, attrs):
+        mobile = str(attrs.get("mobile") or attrs.get("phone") or "").strip()
+        if not mobile:
+            raise serializers.ValidationError({"phone": "phone is required"})
+
+        code = str(attrs.get("code") or attrs.get("sms_code") or "").strip()
+        if not code:
+            raise serializers.ValidationError({"sms_code": "sms_code is required"})
+
+        attrs["mobile"] = mobile
+        attrs["code"] = code
+        return attrs
+
+
 class MobileAuthSerializer(serializers.Serializer):
     mobile = serializers.RegexField(regex=r"^\d{6,20}$")
     country_code = serializers.RegexField(regex=r"^\d{1,4}$", required=False, default="86")

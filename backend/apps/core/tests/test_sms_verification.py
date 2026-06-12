@@ -1,5 +1,6 @@
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
+from unittest.mock import patch
 
 
 class SmsVerificationApiTests(TestCase):
@@ -75,3 +76,20 @@ class SmsVerificationApiTests(TestCase):
 
         still_locked = self.client.post(self.verify_url, {"phone": full_phone, "code": "000000"}, format="json")
         self.assertEqual(still_locked.status_code, 429)
+
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=True, SMS_PROVIDER_CHAIN=["mock"])
+    def test_send_should_fail_closed_when_sms_backend_unavailable(self):
+        with patch("apps.core.views.send_sms_with_failover.delay", side_effect=RuntimeError("broker unavailable")):
+            resp = self.client.post(self.send_url, {"phone": self.phone}, format="json")
+
+        self.assertEqual(resp.status_code, 503)
+        self.assertEqual(resp.data["code"], 503)
+        self.assertIn("暂不可用", resp.data["message"])
+
+    def test_verify_should_fail_closed_when_sms_backend_unavailable(self):
+        with patch("apps.core.views.verify_sms_code_with_lua", side_effect=RuntimeError("redis unavailable")):
+            resp = self.client.post(self.verify_url, {"phone": f"+86{self.phone}", "code": "123456"}, format="json")
+
+        self.assertEqual(resp.status_code, 503)
+        self.assertEqual(resp.data["code"], 503)
+        self.assertIn("暂不可用", resp.data["message"])

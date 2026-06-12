@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
+from unittest.mock import patch
 
 from apps.core.models import AccountDeletionLog, UserPhoneBinding
 from apps.core.sms_service import store_sms_code
@@ -47,3 +48,15 @@ class MobileAuthFlowTests(TestCase):
         user = get_user_model().objects.get(id=login_resp.data["data"]["user"]["id"])
         self.assertFalse(user.is_active)
         self.assertTrue(AccountDeletionLog.objects.filter(user=user).exists())
+
+    def test_mobile_login_should_fail_closed_when_sms_backend_unavailable(self):
+        with patch("apps.core.views.verify_sms_code_with_lua", side_effect=RuntimeError("redis unavailable")):
+            resp = self.client.post(
+                self.login_url,
+                {"mobile": self.mobile, "country_code": "86", "code": self.code, "agreed_privacy": True},
+                format="json",
+            )
+
+        self.assertEqual(resp.status_code, 503)
+        self.assertEqual(resp.data["code"], 503)
+        self.assertIn("暂不可用", resp.data["message"])

@@ -3,254 +3,404 @@
     <div class="register-card">
       <div class="reg-logo">
         <h1>辽宁跨境宝盒</h1>
-        <p>创建您的跨境电商账号</p>
+        <p>手机号验证码注册，注册后可直接进入系统</p>
       </div>
 
-      <!-- 步骤条 -->
-      <el-steps :active="step" align-center class="reg-steps">
-        <el-step title="账号信息" />
-        <el-step title="实名认证" />
-        <el-step title="经营信息" />
-        <el-step title="提交审核" />
-      </el-steps>
+      <div class="reg-intro">
+        <span class="intro-badge">SMS Register</span>
+        <p>账号通过短信验证码完成校验，密码登录作为备用入口保留。</p>
+      </div>
 
-      <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="reg-form" @submit.prevent>
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        label-position="top"
+        class="reg-form"
+        @submit.prevent="handleRegister"
+      >
+        <el-form-item label="手机号" prop="phone">
+          <el-input
+            v-model="form.phone"
+            placeholder="请输入 11 位手机号"
+            maxlength="11"
+            clearable
+          />
+        </el-form-item>
 
-        <!-- Step 0: 账号信息 -->
-        <div v-show="step === 0">
-          <el-form-item label="手机号" prop="phone">
-            <el-input v-model="form.phone" placeholder="输入11位手机号" maxlength="11" />
-          </el-form-item>
-          <el-form-item label="验证码" prop="smsCode">
-            <el-input v-model="form.smsCode" placeholder="输入短信验证码" maxlength="6" style="width:calc(100% - 140px)" />
-            <el-button :disabled="countdown>0" @click="sendSms" style="width:130px;margin-left:10px">
+        <el-form-item label="验证码" prop="smsCode">
+          <div class="sms-row">
+            <el-input
+              v-model="form.smsCode"
+              placeholder="请输入短信验证码"
+              maxlength="6"
+            />
+            <el-button
+              class="sms-btn"
+              :disabled="countdown > 0"
+              :loading="sendingCode"
+              @click="handleSendSms"
+            >
               {{ countdown > 0 ? `${countdown}s` : '获取验证码' }}
             </el-button>
-          </el-form-item>
-          <el-form-item label="登录密码" prop="password">
-            <el-input v-model="form.password" type="password" placeholder="6-16位，含数字与字母" show-password />
-          </el-form-item>
-          <el-form-item label="用户类型" prop="userType">
-            <el-radio-group v-model="form.userType">
-              <el-radio-button value="personal">个人卖家</el-radio-button>
-              <el-radio-button value="enterprise">企业卖家</el-radio-button>
-            </el-radio-group>
-          </el-form-item>
-        </div>
-
-        <!-- Step 1: 实名认证 -->
-        <div v-show="step === 1">
-          <template v-if="form.userType === 'personal'">
-            <el-form-item label="真实姓名" prop="realName">
-              <el-input v-model="form.realName" placeholder="与身份证一致" />
-            </el-form-item>
-            <el-form-item label="身份证号" prop="idCard">
-              <el-input v-model="form.idCard" placeholder="18位身份证号" maxlength="18" />
-            </el-form-item>
-            <el-form-item label="身份证正面" prop="idFront">
-              <el-upload class="id-upload" :auto-upload="false" :limit="1" list-type="picture-card"
-                :on-change="(f) => form.idFront = f.raw">
-                <el-icon><Plus /></el-icon>
-              </el-upload>
-            </el-form-item>
-            <el-form-item label="身份证反面" prop="idBack">
-              <el-upload class="id-upload" :auto-upload="false" :limit="1" list-type="picture-card"
-                :on-change="(f) => form.idBack = f.raw">
-                <el-icon><Plus /></el-icon>
-              </el-upload>
-            </el-form-item>
-          </template>
-          <template v-else>
-            <el-form-item label="企业名称" prop="companyName">
-              <el-input v-model="form.companyName" placeholder="与营业执照一致" />
-            </el-form-item>
-            <el-form-item label="统一社会信用代码" prop="creditCode">
-              <el-input v-model="form.creditCode" placeholder="18位统一社会信用代码" maxlength="18" />
-            </el-form-item>
-            <el-form-item label="营业执照" prop="license">
-              <el-upload class="id-upload" :auto-upload="false" :limit="1" list-type="picture-card"
-                :on-change="(f) => form.license = f.raw">
-                <el-icon><Plus /></el-icon>
-              </el-upload>
-            </el-form-item>
-            <el-form-item label="法人姓名" prop="legalPerson">
-              <el-input v-model="form.legalPerson" placeholder="法人姓名" />
-            </el-form-item>
-          </template>
-        </div>
-
-        <!-- Step 2: 经营信息 -->
-        <div v-show="step === 2">
-          <el-form-item label="主营类目">
-            <el-select v-model="form.category" placeholder="请选择" style="width:100%">
-              <el-option v-for="c in categories" :key="c" :label="c" :value="c" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="目标市场">
-            <el-checkbox-group v-model="form.markets">
-              <el-checkbox v-for="m in markets" :key="m" :label="m" :value="m">{{ m }}</el-checkbox>
-            </el-checkbox-group>
-          </el-form-item>
-          <el-form-item label="经营经验">
-            <el-radio-group v-model="form.experience">
-              <el-radio label="new">0经验新手</el-radio>
-              <el-radio label="half">1年以内</el-radio>
-              <el-radio label="senior">1-3年</el-radio>
-              <el-radio label="expert">3年以上</el-radio>
-            </el-radio-group>
-          </el-form-item>
-        </div>
-
-        <!-- Step 3: 提交审核 -->
-        <div v-show="step === 3">
-          <div class="confirm-section">
-            <el-descriptions title="请确认注册信息" :column="1" border>
-              <el-descriptions-item label="手机号">{{ form.phone }}</el-descriptions-item>
-              <el-descriptions-item label="用户类型">{{ form.userType === 'personal' ? '个人卖家' : '企业卖家' }}</el-descriptions-item>
-              <el-descriptions-item label="姓名/企业">{{ form.realName || form.companyName }}</el-descriptions-item>
-              <el-descriptions-item label="主营类目">{{ form.category || '未选择' }}</el-descriptions-item>
-              <el-descriptions-item label="目标市场">{{ form.markets.join('、') || '未选择' }}</el-descriptions-item>
-              <el-descriptions-item label="经营经验">{{ experienceMap[form.experience] || '未选择' }}</el-descriptions-item>
-            </el-descriptions>
-            <el-checkbox v-model="agreed" style="margin-top:16px">
-              我已阅读并同意 <el-link type="primary">《用户协议》</el-link> 和 <el-link type="primary">《隐私政策》</el-link>
-            </el-checkbox>
           </div>
+        </el-form-item>
+
+        <el-form-item label="登录密码" prop="password">
+          <el-input
+            v-model="form.password"
+            type="password"
+            placeholder="请输入 6-20 位密码"
+            show-password
+          />
+        </el-form-item>
+
+        <el-form-item label="确认密码" prop="confirmPassword">
+          <el-input
+            v-model="form.confirmPassword"
+            type="password"
+            placeholder="请再次输入密码"
+            show-password
+          />
+        </el-form-item>
+
+        <div class="agreement-row">
+          <el-checkbox v-model="form.agreed">
+            我已阅读并同意
+            <el-link type="primary" :underline="false">《用户协议》</el-link>
+            和
+            <el-link type="primary" :underline="false">《隐私政策》</el-link>
+          </el-checkbox>
         </div>
 
         <div class="step-actions">
-          <el-button v-if="step > 0" @click="step--">上一步</el-button>
-          <el-button v-if="step < 3" type="primary" @click="nextStep">下一步</el-button>
-          <el-button v-else type="primary" :loading="submitting" @click="submitRegister">提交注册申请</el-button>
-          <el-button text @click="$router.push('/login')" style="margin-left:12px">返回登录</el-button>
+          <el-button type="primary" :loading="submitting" @click="handleRegister">
+            注册并进入系统
+          </el-button>
+          <el-button text @click="$router.push('/login')">返回登录</el-button>
         </div>
       </el-form>
 
-      <!-- 审核状态查询 -->
       <div class="reg-footer">
-        <span>已提交申请？</span>
-        <el-link type="primary" @click="showQuery = true">审核进度查询</el-link>
+        <span>已有账号？</span>
+        <el-link type="primary" :underline="false" @click="$router.push('/login')">
+          去登录
+        </el-link>
       </div>
     </div>
-
-    <!-- 审核进度查询弹窗 -->
-    <el-dialog v-model="showQuery" title="审核进度查询" width="400px">
-      <el-form>
-        <el-form-item label="注册手机号">
-          <el-input v-model="queryPhone" placeholder="输入注册时的手机号" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showQuery = false">取消</el-button>
-        <el-button type="primary" @click="checkStatus">查询</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { reactive, ref, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
-import request from '@/utils/request'
+import { getCurrentUser, register, sendSmsCode } from '@/api/auth'
 
 const router = useRouter()
 const formRef = ref(null)
-const step = ref(0)
 const submitting = ref(false)
-const agreed = ref(false)
+const sendingCode = ref(false)
 const countdown = ref(0)
-const showQuery = ref(false)
-const queryPhone = ref('')
-let timer = null
+let countdownTimer = null
 
-const categories = ['电子产品', '服装鞋帽', '家居用品', '美妆个护', '运动户外', '箱包皮具', '母婴玩具', '汽车用品', '食品饮料', '其他']
-const markets = ['东南亚', '北美', '欧洲', '中东', '拉美', '日韩', '非洲', '澳洲']
-const experienceMap = { new: '0经验新手', half: '1年以内', senior: '1-3年', expert: '3年以上' }
+const validateConfirmPassword = (_rule, value, callback) => {
+  if (!value) {
+    callback(new Error('请再次输入密码'))
+    return
+  }
+  if (value !== form.password) {
+    callback(new Error('两次输入的密码不一致'))
+    return
+  }
+  callback()
+}
 
 const form = reactive({
-  phone: '', smsCode: '', password: '', userType: 'personal',
-  realName: '', idCard: '', idFront: null, idBack: null,
-  companyName: '', creditCode: '', license: null, legalPerson: '',
-  category: '', markets: [], experience: ''
+  phone: '',
+  smsCode: '',
+  password: '',
+  confirmPassword: '',
+  agreed: false,
 })
 
 const rules = {
-  phone: [{ required: true, message: '请输入手机号', trigger: 'blur' }, { pattern: /^1[3-9]\d{9}$/, message: '手机号格式不正确' }],
-  smsCode: [{ required: true, message: '请输入验证码' }],
-  password: [{ required: true, message: '请设置密码' }, { min: 6, max: 16, message: '6-16位' }],
-  userType: [{ required: true }],
-  realName: [{ required: true, message: '请输入真实姓名' }],
-  idCard: [{ required: true, message: '请输入身份证号' }],
-  companyName: [{ required: true, message: '请输入企业名称' }],
-  creditCode: [{ required: true, message: '请输入统一社会信用代码' }],
+  phone: [
+    { required: true, message: '请输入手机号', trigger: 'blur' },
+    { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号', trigger: 'blur' },
+  ],
+  smsCode: [
+    { required: true, message: '请输入验证码', trigger: 'blur' },
+    { pattern: /^\d{4,6}$/, message: '验证码为 4-6 位数字', trigger: 'blur' },
+  ],
+  password: [
+    { required: true, message: '请输入密码', trigger: 'blur' },
+    { min: 6, max: 20, message: '密码长度需为 6-20 位', trigger: 'blur' },
+  ],
+  confirmPassword: [
+    { required: true, message: '请再次输入密码', trigger: 'blur' },
+    { validator: validateConfirmPassword, trigger: 'blur' },
+  ],
 }
 
-function sendSms() {
-  if (!/^1[3-9]\d{9}$/.test(form.phone)) { ElMessage.warning('请输入正确手机号'); return }
-  request.post('/api/auth/send-sms', { phone: form.phone, country_code: '86' }).then(res => {
-    if (res?.data?.code) { form.smsCode = res.data.code; ElMessage.success(`验证码: ${res.data.code}`) }
-    else ElMessage.success('验证码已发送')
-    countdown.value = 60
-    timer = setInterval(() => { countdown.value--; if (countdown.value <= 0) clearInterval(timer) }, 1000)
-  }).catch(() => ElMessage.error('发送失败'))
+function startCountdown() {
+  countdown.value = 60
+  countdownTimer = setInterval(() => {
+    countdown.value -= 1
+    if (countdown.value <= 0) {
+      clearInterval(countdownTimer)
+      countdownTimer = null
+    }
+  }, 1000)
 }
 
-function nextStep() {
-  if (step.value === 0) { if (!form.phone || !form.smsCode || !form.password) { ElMessage.warning('请完善信息'); return } }
-  if (step.value === 1) {
-    if (form.userType === 'personal' && (!form.realName || !form.idCard)) { ElMessage.warning('请完成实名认证'); return }
-    if (form.userType === 'enterprise' && (!form.companyName || !form.creditCode)) { ElMessage.warning('请完善企业信息'); return }
+async function handleSendSms() {
+  if (countdown.value > 0 || sendingCode.value) return
+
+  const phonePattern = /^1[3-9]\d{9}$/
+  if (!form.phone || !phonePattern.test(form.phone)) {
+    ElMessage.warning('请输入正确的手机号')
+    return
   }
-  step.value++
+
+  sendingCode.value = true
+  try {
+    const res = await sendSmsCode(form.phone, '86')
+    if (res && res.code === 200) {
+      if (res.data?.code) {
+        form.smsCode = res.data.code
+        ElMessage.success(`验证码已发送（开发模式）：${res.data.code}`)
+      } else {
+        ElMessage.success('验证码已发送，请注意查收短信')
+      }
+      startCountdown()
+      return
+    }
+    ElMessage.warning(res?.message || '发送失败，请稍后重试')
+  } catch (err) {
+    const msg = err?.response?.data?.message || err?.message || '发送失败，请稍后重试'
+    ElMessage.error(msg)
+  } finally {
+    sendingCode.value = false
+  }
 }
 
-async function submitRegister() {
-  if (!agreed.value) { ElMessage.warning('请同意用户协议'); return }
+async function handleRegister() {
+  if (!formRef.value || submitting.value) return
+
+  const valid = await formRef.value.validate().then(() => true).catch(() => false)
+  if (!valid) return
+
+  if (!form.agreed) {
+    ElMessage.warning('请先阅读并同意用户协议与隐私政策')
+    return
+  }
+
   submitting.value = true
   try {
-    await request.post('/api/auth/register-submit/', {
-      phone: form.phone, sms_code: form.smsCode, password: form.password,
-      user_type: form.userType, real_name: form.realName, id_card: form.idCard,
-      company_name: form.companyName, credit_code: form.creditCode,
-      legal_person: form.legalPerson, category: form.category,
-      markets: form.markets, experience: form.experience,
+    const res = await register({
+      phone: form.phone,
+      sms_code: form.smsCode,
+      password: form.password,
+      country_code: '86',
+      agreed_privacy: true,
     })
-    ElMessage.success('注册申请已提交，审核结果将通过短信通知')
-    router.push('/login?registered=1')
-  } catch (e) {
-    ElMessage.error(e?.response?.data?.message || '提交失败')
-  } finally { submitting.value = false }
+
+    if (res && res.code === 200) {
+      const accessToken = res.data?.access || res.data?.access_token
+      const refreshToken = res.data?.refresh || res.data?.refresh_token
+      if (accessToken) {
+        localStorage.setItem('access_token', accessToken)
+      }
+      if (refreshToken) {
+        localStorage.setItem('refresh_token', refreshToken)
+      }
+      localStorage.setItem('user_phone', form.phone)
+
+      try {
+        const userRes = await getCurrentUser()
+        if (userRes?.data) {
+          localStorage.setItem('user_info', JSON.stringify(userRes.data))
+        }
+      } catch (_) {
+        // User info fetch should not block successful registration.
+      }
+
+      ElMessage.success('注册成功')
+      router.push('/')
+      return
+    }
+
+    ElMessage.error(res?.message || '注册失败，请稍后重试')
+  } catch (err) {
+    const status = err?.response?.status
+    const msg = err?.response?.data?.message
+    if (status === 400) {
+      ElMessage.error(msg || '验证码错误、手机号已注册或参数无效')
+    } else if (status === 429) {
+      ElMessage.warning(msg || '操作过于频繁，请稍后再试')
+    } else {
+      ElMessage.error(msg || '注册失败，请稍后重试')
+    }
+  } finally {
+    submitting.value = false
+  }
 }
 
-async function checkStatus() {
-  if (!queryPhone.value) { ElMessage.warning('请输入手机号'); return }
-  try {
-    const res = await request.get('/api/auth/register-status/', { params: { phone: queryPhone.value } })
-    const d = res?.data || {}
-    const statusMap = { pending: '审核中', approved: '已通过', rejected: '已驳回' }
-    ElMessageBox.alert(
-      `状态: ${statusMap[d.status] || d.status}\n${d.reason ? '驳回原因: ' + d.reason : ''}\n${d.message || ''}`,
-      '审核进度'
-    )
-  } catch { ElMessage.error('查询失败') }
-}
-
-import { ElMessageBox } from 'element-plus'
+onUnmounted(() => {
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+  }
+})
 </script>
 
 <style scoped>
-.register-page { min-height:100vh; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#f8fafc,#e2e8f0); padding:40px 0 }
-.register-card { width:560px; background:#fff; border-radius:16px; padding:40px; box-shadow:0 4px 24px rgba(0,0,0,0.08); position:relative }
-.register-card::before { content:''; position:absolute; top:0;left:0;right:0;height:4px; background:linear-gradient(90deg,#085B9C,#2ead3e); border-radius:16px 16px 0 0 }
-.reg-logo { text-align:center; margin-bottom:24px }
-.reg-logo h1 { font-size:22px;font-weight:700;color:#1e293b;margin:0 0 4px }
-.reg-logo p { font-size:13px;color:#64748b;margin:0 }
-.reg-steps { margin-bottom:28px }
-.reg-form { margin-top:8px }
-.id-upload :deep(.el-upload--picture-card) { width:100px;height:100px }
-.step-actions { display:flex;align-items:center;justify-content:center;margin-top:28px;gap:12px }
-.confirm-section { margin-bottom:8px }
-.reg-footer { text-align:center;margin-top:24px;padding-top:20px;border-top:1px solid #f1f5f9;font-size:13px;color:#64748b }
+.register-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at top left, rgba(8, 91, 156, 0.12), transparent 32%),
+    radial-gradient(circle at bottom right, rgba(46, 173, 62, 0.12), transparent 30%),
+    linear-gradient(135deg, #f8fafc, #e2e8f0);
+  padding: 40px 16px;
+}
+
+.register-card {
+  width: 100%;
+  max-width: 560px;
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 20px;
+  padding: 40px;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.12);
+  position: relative;
+  overflow: hidden;
+}
+
+.register-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 5px;
+  background: linear-gradient(90deg, #085b9c, #2ead3e);
+}
+
+.reg-logo {
+  text-align: center;
+  margin-bottom: 18px;
+}
+
+.reg-logo h1 {
+  margin: 0 0 8px;
+  font-size: 28px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.reg-logo p {
+  margin: 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.reg-intro {
+  margin-bottom: 24px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(8, 91, 156, 0.08), rgba(46, 173, 62, 0.08));
+  border: 1px solid rgba(8, 91, 156, 0.08);
+}
+
+.intro-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #085b9c;
+  color: #fff;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.reg-intro p {
+  margin: 10px 0 0;
+  color: #334155;
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+.reg-form {
+  margin-top: 8px;
+}
+
+.sms-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px;
+  gap: 10px;
+  width: 100%;
+}
+
+.sms-btn {
+  width: 132px;
+}
+
+.agreement-row {
+  margin-top: 4px;
+  color: #475569;
+  line-height: 1.7;
+}
+
+.step-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.step-actions :deep(.el-button--primary) {
+  min-width: 188px;
+}
+
+.reg-footer {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .register-card {
+    padding: 28px 20px;
+    border-radius: 18px;
+  }
+
+  .reg-logo h1 {
+    font-size: 24px;
+  }
+
+  .sms-row {
+    grid-template-columns: 1fr;
+  }
+
+  .sms-btn {
+    width: 100%;
+  }
+
+  .step-actions {
+    flex-direction: column;
+  }
+
+  .step-actions :deep(.el-button) {
+    width: 100%;
+    margin-left: 0;
+  }
+}
 </style>
