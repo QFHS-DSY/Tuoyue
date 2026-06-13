@@ -361,7 +361,8 @@ SMS_DEBUG_BYPASS_CODE = os.getenv("SMS_DEBUG_BYPASS_CODE", "123456" if DEBUG els
 SMS_EXPOSE_CODE_IN_RESPONSE = os.getenv("SMS_EXPOSE_CODE_IN_RESPONSE", "true" if DEBUG else "false").lower() == "true"
 SMS_GLOBAL_HOURLY_LIMIT = int(os.getenv("SMS_GLOBAL_HOURLY_LIMIT", "10000"))
 DEVICE_PHONE_DAILY_LIMIT = int(os.getenv("DEVICE_PHONE_DAILY_LIMIT", "5"))
-SMS_PROVIDER_CHAIN = [i.strip() for i in os.getenv("SMS_PROVIDER_CHAIN", "aliyun,tencent,mock").split(",") if i.strip()]
+_default_sms_provider_chain = "mock" if DEMO_MODE else (SMS_PROVIDER or "aliyun")
+SMS_PROVIDER_CHAIN = [i.strip().lower() for i in os.getenv("SMS_PROVIDER_CHAIN", _default_sms_provider_chain).split(",") if i.strip()]
 ALIYUN_ACCESS_KEY_ID = os.getenv("ALIYUN_ACCESS_KEY_ID", "")
 ALIYUN_ACCESS_KEY_SECRET = os.getenv("ALIYUN_ACCESS_KEY_SECRET", "")
 ALIYUN_SMS_SIGN_NAME = os.getenv("ALIYUN_SMS_SIGN_NAME", "")

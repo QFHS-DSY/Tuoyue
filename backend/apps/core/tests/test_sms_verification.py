@@ -79,7 +79,7 @@ class SmsVerificationApiTests(TestCase):
 
     @override_settings(CELERY_TASK_ALWAYS_EAGER=True, SMS_PROVIDER_CHAIN=["mock"])
     def test_send_should_fail_closed_when_sms_backend_unavailable(self):
-        with patch("apps.core.views.send_sms_with_failover.delay", side_effect=RuntimeError("broker unavailable")):
+        with patch("apps.core.views.dispatch_sms_with_failover", side_effect=RuntimeError("sms backend unavailable")):
             resp = self.client.post(self.send_url, {"phone": self.phone}, format="json")
 
         self.assertEqual(resp.status_code, 503)

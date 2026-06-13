@@ -158,6 +158,10 @@ async function handleSendSms() {
   if (countdown.value > 0 || sendingCode.value) return
 
   const phonePattern = /^1[3-9]\d{9}$/
+  if (!form.agreed) {
+    ElMessage.warning('请先阅读并同意用户协议与隐私政策')
+    return
+  }
   if (!form.phone || !phonePattern.test(form.phone)) {
     ElMessage.warning('请输入正确的手机号')
     return

@@ -81,6 +81,7 @@ from .sms_providers import SmsSendError
 from .sms_service import (
     check_send_rate_limits,
     create_captcha_challenge,
+    dispatch_sms_with_failover,
     generate_sms_code,
     get_client_ip,
     check_and_incr_global_sms_limit,
@@ -92,7 +93,7 @@ from .sms_service import (
     validate_captcha_if_required,
 )
 from .services import build_expire_time
-from .tasks import execute_collection_task, scheduled_inventory_sync, send_sms_with_failover
+from .tasks import execute_collection_task, scheduled_inventory_sync
 
 
 logger = logging.getLogger(__name__)
@@ -1623,11 +1624,11 @@ class SmsCodeSendView(APIView):
 
             code = str(getattr(settings, "SMS_DEBUG_BYPASS_CODE", "") or "").strip() or generate_sms_code()
             message_type = "voice" if voice else "sms"
-            send_result = send_sms_with_failover.delay(
+            send_result = dispatch_sms_with_failover(
                 phone=full_phone,
                 code=code,
                 message_type=message_type,
-            ).get(timeout=15)
+            )
             store_sms_code(full_phone, code)
             record_send_success(full_phone, client_ip)
             ttl = int(getattr(settings, "SMS_CODE_TTL_SECONDS", 300))

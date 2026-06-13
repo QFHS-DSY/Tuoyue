@@ -75,8 +75,6 @@ services:
       CSRF_TRUSTED_ORIGINS: "http://localhost:1101,http://127.0.0.1:1101${DOMAIN:+,http://${DOMAIN}}"
       DB_FAILOPEN_SQLITE: "False"
       CACHE_FAILOPEN_LOCMEM: "False"
-      DEMO_MODE: "True"
-      DEBUG: "True"
     volumes:
       - ./backend:/app
     command: >

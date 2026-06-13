@@ -11,7 +11,11 @@ from typing import Tuple
 
 from django.conf import settings
 from django.core.cache import cache
+from django.utils import timezone
 from django_redis import get_redis_connection
+
+from .models import SmsDispatchLog
+from .sms_providers import SmsSendError, get_sms_provider
 
 SMS_CODE_CACHE_PREFIX = "auth:sms:code:"
 SMS_SEND_COOLDOWN_PREFIX = "auth:sms:send:cooldown:"
@@ -155,6 +159,56 @@ def check_and_incr_global_sms_limit() -> str | None:
     except ValueError:
         cache.set(key, current_int + 1, timeout=3700)
     return None
+
+
+def _resolve_sms_provider_chain() -> list[str]:
+    providers = getattr(settings, "SMS_PROVIDER_CHAIN", [])
+    if isinstance(providers, str):
+        providers = [item.strip().lower() for item in providers.split(",") if item.strip()]
+    else:
+        providers = [str(item).strip().lower() for item in providers if str(item).strip()]
+
+    if providers:
+        return providers
+
+    fallback = str(getattr(settings, "SMS_PROVIDER", "") or "").strip().lower()
+    if fallback:
+        return [fallback]
+    return ["mock" if getattr(settings, "DEMO_MODE", False) else "aliyun"]
+
+
+def dispatch_sms_with_failover(phone: str, code: str, message_type: str = "sms") -> dict:
+    providers = _resolve_sms_provider_chain()
+    dispatch = SmsDispatchLog.objects.create(
+        phone=phone,
+        message_type=message_type,
+        provider=providers[0],
+        status=SmsDispatchLog.STATUS_SENDING,
+    )
+
+    last_error = ""
+    for provider_name in providers:
+        try:
+            provider = get_sms_provider(provider_name)
+            result = provider.send_code(phone=phone, code=code, message_type=message_type)
+            dispatch.provider = result.provider
+            dispatch.biz_id = result.biz_id or ""
+            dispatch.status = SmsDispatchLog.STATUS_DELIVERED
+            dispatch.delivered_at = timezone.now()
+            dispatch.error_reason = ""
+            dispatch.save(update_fields=["provider", "biz_id", "status", "delivered_at", "error_reason"])
+            return {"ok": True, "provider": result.provider, "biz_id": result.biz_id}
+        except SmsSendError as exc:
+            last_error = str(exc)
+            continue
+        except Exception as exc:
+            last_error = str(exc)
+            continue
+
+    dispatch.status = SmsDispatchLog.STATUS_FAILED
+    dispatch.error_reason = last_error or "all providers failed"
+    dispatch.save(update_fields=["status", "error_reason"])
+    raise SmsSendError(dispatch.error_reason)
 
 
 def verify_sms_code_with_lua(phone: str, submitted_code: str) -> Tuple[bool, str | None, int]:
