@@ -116,78 +116,123 @@
         </el-card>
       </div>
 
-      <!-- 右侧：结果看板 -->
+      <!-- 右侧：结果看板 + 任务队列监视器 -->
       <div class="right-panel">
-        <el-card class="result-card" v-if="store.lastResult">
-          <template #header>
-            <div class="result-header">
-              <span class="card-title">测算结果</span>
-              <el-tag :type="store.lastResult.decision_type" size="large" class="decision-tag">
-                {{ store.lastResult.decision_text }}
-              </el-tag>
-            </div>
-          </template>
+        <div class="right-panel-content">
+          <!-- 测算结果 -->
+          <el-card class="result-card" v-if="store.lastResult">
+            <template #header>
+              <div class="result-header">
+                <span class="card-title">测算结果</span>
+                <el-tag :type="store.lastResult.decision_type" size="large" class="decision-tag">
+                  {{ store.lastResult.decision_text }}
+                </el-tag>
+              </div>
+            </template>
 
-          <!-- ROAS 核心指标 -->
-          <div class="roas-display">
-            <div class="roas-circle" :class="getRoasClass(store.lastResult.roas)">
-              <div class="roas-value">{{ store.lastResult.roas }}</div>
-              <div class="roas-label">ROAS</div>
+            <!-- ROAS 核心指标 -->
+            <div class="roas-display">
+              <div class="roas-circle" :class="getRoasClass(store.lastResult.roas)">
+                <div class="roas-value">{{ store.lastResult.roas }}</div>
+                <div class="roas-label">ROAS</div>
+              </div>
             </div>
-          </div>
 
-          <!-- 决策灯号说明 -->
-          <div class="decision-legend">
-            <div class="legend-item">
-              <span class="dot danger"></span>
-              <span>比值 &lt; 3：高风险</span>
+            <!-- 决策灯号说明 -->
+            <div class="decision-legend">
+              <div class="legend-item">
+                <span class="dot danger"></span>
+                <span>比值 &lt; 3：高风险</span>
+              </div>
+              <div class="legend-item">
+                <span class="dot success"></span>
+                <span>3 ≤ 比值 ≤ 5：健康/推荐</span>
+              </div>
+              <div class="legend-item">
+                <span class="dot warning"></span>
+                <span>比值 &gt; 5：爆款潜力</span>
+              </div>
             </div>
-            <div class="legend-item">
-              <span class="dot success"></span>
-              <span>3 ≤ 比值 ≤ 5：健康/推荐</span>
-            </div>
-            <div class="legend-item">
-              <span class="dot warning"></span>
-              <span>比值 &gt; 5：爆款潜力</span>
-            </div>
-          </div>
 
-          <!-- 详细数据 -->
-          <el-divider />
-          
-          <div class="result-details">
-            <div class="detail-row">
-              <span class="label">预估收入</span>
-              <span class="value income">¥{{ store.lastResult.estimated_revenue.toLocaleString() }}</span>
+            <!-- 详细数据 -->
+            <el-divider />
+            
+            <div class="result-details">
+              <div class="detail-row">
+                <span class="label">预估收入</span>
+                <span class="value income">¥{{ store.lastResult.estimated_revenue.toLocaleString() }}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">总投入</span>
+                <span class="value expense">¥{{ store.lastResult.total_investment.toFixed(2) }}</span>
+              </div>
+              <el-divider direction="vertical" class="divider-vertical" />
+              <div class="detail-row">
+                <span class="label">固定成本</span>
+                <span class="value">¥{{ store.lastResult.fixed_cost.toFixed(2) }}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">变量成本</span>
+                <span class="value">¥{{ store.lastResult.variable_cost.toFixed(2) }}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">宣传费用</span>
+                <span class="value">¥{{ store.lastResult.promotion_cost.toFixed(2) }}</span>
+              </div>
             </div>
-            <div class="detail-row">
-              <span class="label">总投入</span>
-              <span class="value expense">¥{{ store.lastResult.total_investment.toFixed(2) }}</span>
-            </div>
-            <el-divider direction="vertical" class="divider-vertical" />
-            <div class="detail-row">
-              <span class="label">固定成本</span>
-              <span class="value">¥{{ store.lastResult.fixed_cost.toFixed(2) }}</span>
-            </div>
-            <div class="detail-row">
-              <span class="label">变量成本</span>
-              <span class="value">¥{{ store.lastResult.variable_cost.toFixed(2) }}</span>
-            </div>
-            <div class="detail-row">
-              <span class="label">宣传费用</span>
-              <span class="value">¥{{ store.lastResult.promotion_cost.toFixed(2) }}</span>
-            </div>
-          </div>
-        </el-card>
+          </el-card>
 
-        <!-- 空状态 -->
-        <el-card v-else class="empty-card">
-          <div class="empty-state">
-            <el-icon class="empty-icon"><DataAnalysis /></el-icon>
-            <p>请先选择商品并调整参数</p>
-            <p class="empty-hint">输入 SKU 或商品名称开始选品决策</p>
-          </div>
-        </el-card>
+          <!-- 空状态 -->
+          <el-card v-else class="empty-card">
+            <div class="empty-state">
+              <el-icon class="empty-icon"><DataAnalysis /></el-icon>
+              <p>请先选择商品并调整参数</p>
+              <p class="empty-hint">输入 SKU 或商品名称开始选品决策</p>
+            </div>
+          </el-card>
+        </div>
+
+        <!-- 右侧边任务队列监视器 -->
+        <div class="task-sidebar">
+          <el-card class="task-sidebar-card" shadow="never">
+            <template #header>
+              <div class="task-sidebar-header">
+                <el-icon><List /></el-icon>
+                <span>任务队列</span>
+                <el-tag v-if="taskStore.totalCount > 0" size="small" type="primary">
+                  {{ taskStore.totalCount }}
+                </el-tag>
+              </div>
+            </template>
+
+            <div v-if="taskStore.tasks.length === 0" class="task-sidebar-empty">
+              <el-icon :size="32" color="#c0c4cc"><Clock /></el-icon>
+              <p>暂无任务</p>
+              <p class="task-sidebar-empty-hint">执行选品测算后将在此显示进度</p>
+            </div>
+
+            <div v-else class="task-sidebar-list">
+              <div
+                v-for="task in taskStore.tasks"
+                :key="task.task_id"
+                class="task-sidebar-item"
+              >
+                <div class="tsi-header">
+                  <span class="tsi-title">{{ task.title }}</span>
+                  <el-tag :type="taskStatusType(task.status)" size="small">
+                    {{ taskStatusLabel(task.status) }}
+                  </el-tag>
+                </div>
+                <el-progress
+                  :percentage="task.progress"
+                  :status="task.status === 'failed' ? 'exception' : task.status === 'success' ? 'success' : undefined"
+                  :stroke-width="4"
+                />
+                <div class="tsi-message">{{ task.message }}</div>
+              </div>
+            </div>
+          </el-card>
+        </div>
       </div>
     </div>
   </div>
@@ -196,10 +241,23 @@
 <script setup>
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { DataAnalysis } from '@element-plus/icons-vue'
+import { DataAnalysis, List, Clock } from '@element-plus/icons-vue'
 import { useDecisionStore } from '@/stores/decision'
+import { useTaskProgressStore } from '@/stores/useTaskProgress'
 
 const store = useDecisionStore()
+const taskStore = useTaskProgressStore()
+
+// 任务状态类型映射
+function taskStatusType(status) {
+  const map = { running: 'primary', success: 'success', failed: 'danger', pending: 'info', cancelled: 'warning' }
+  return map[status] || 'info'
+}
+
+function taskStatusLabel(status) {
+  const map = { running: '运行中', success: '成功', failed: '失败', pending: '等待', cancelled: '已取消' }
+  return map[status] || status
+}
 
 const searchKeyword = ref('')
 let debounceTimer = null
@@ -274,7 +332,7 @@ function getRoasClass(roas) {
 
 .decision-layout {
   display: grid;
-  grid-template-columns: 380px 1fr;
+  grid-template-columns: 380px 1fr 280px;
   gap: 24px;
 }
 
@@ -285,7 +343,91 @@ function getRoasClass(roas) {
 }
 
 .right-panel {
-  min-height: 500px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.right-panel-content {
+  flex: 1;
+}
+
+/* 任务队列监视器（右侧边栏） */
+.task-sidebar {
+  min-width: 0;
+}
+
+.task-sidebar-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.task-sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #1e293b;
+  font-size: 14px;
+}
+
+.task-sidebar-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 0;
+  color: #c0c4cc;
+}
+
+.task-sidebar-empty p {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
+.task-sidebar-empty-hint {
+  font-size: 12px !important;
+  color: #e0e0e0 !important;
+}
+
+.task-sidebar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.task-sidebar-item {
+  padding: 10px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #f0f0f0;
+}
+
+.tsi-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.tsi-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+.tsi-message {
+  font-size: 11px;
+  color: #909399;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .card-title {

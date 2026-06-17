@@ -17,7 +17,7 @@
       </div>
 
       <!-- 菜单（按经营链路: 准备→采集→运营→分析→管理） -->
-      <nav class="nav-menu">
+      <nav class="nav-menu" @click="handleNavClick">
 
         <!-- ① 准备 -->
         <div class="nav-section-label" v-if="!isCollapse">准备</div>
@@ -36,6 +36,16 @@
           <el-icon><MagicStick /></el-icon>
           <span v-if="!isCollapse">一站式上货</span>
           <span v-if="!isCollapse" class="nav-badge">核心</span>
+        </div>
+        <div class="nav-item nav-sub-item" :class="{ active: route.path === '/goods/ai-image' }" @click="navigateTo('/goods/ai-image')" :title="isCollapse ? 'AI智能生图' : ''">
+          <el-icon><PictureFilled /></el-icon>
+          <span v-if="!isCollapse">AI智能生图</span>
+          <span v-if="!isCollapse" class="nav-badge nav-badge--ai">AI</span>
+        </div>
+        <div class="nav-item nav-sub-item" :class="{ active: route.path === '/ai-tools' }" @click="navigateTo('/ai-tools')" :title="isCollapse ? 'AI创意工作室' : ''">
+          <el-icon><MagicStick /></el-icon>
+          <span v-if="!isCollapse">AI创意工作室</span>
+          <span v-if="!isCollapse" class="nav-badge nav-badge--ai">AI</span>
         </div>
         <div v-if="appStore.isExpert" class="nav-item nav-sub-item" :class="{ active: route.path === '/creator/search' }" @click="navigateTo('/creator/search')" :title="isCollapse ? '达人检索' : ''">
           <el-icon><UserFilled /></el-icon>
@@ -212,6 +222,52 @@
               <span>{{ appStore.modeLabel }}</span>
             </div>
           </el-tooltip>
+          <el-popover placement="bottom" :width="320" trigger="click">
+            <template #reference>
+              <button class="points-entry" type="button">
+                <span class="points-entry-icon">🪙</span>
+                <div class="points-entry-copy">
+                  <span class="points-entry-label">我的剩余积分</span>
+                  <strong class="points-entry-value">{{ pointsDisplay }}</strong>
+                </div>
+              </button>
+            </template>
+            <div class="points-panel">
+              <div class="points-panel-header">
+                <div>
+                  <span class="points-panel-label">当前积分</span>
+                  <strong class="points-panel-value">{{ pointsDisplay }}</strong>
+                </div>
+                <span v-if="walletInfo.balance !== null" class="points-panel-balance">
+                  余额 {{ balanceDisplay }}
+                </span>
+              </div>
+              <p class="points-panel-tip">
+                按 1 单位余额 = 10,000 积分换算。文案工具按次扣减，图片与视频能力按张或按条计费。
+              </p>
+              <div class="points-usage-list">
+                <div class="points-usage-item">
+                  <span>文案工具预计可用</span>
+                  <strong>{{ copyUsesDisplay }}</strong>
+                  <small>约 1 积分 / 次</small>
+                </div>
+                <div class="points-usage-item">
+                  <span>图片生成预计可用</span>
+                  <strong>{{ imageUsesDisplay }}</strong>
+                  <small>约 10 积分 / 张</small>
+                </div>
+                <div class="points-usage-item">
+                  <span>模特/渲染预计可用</span>
+                  <strong>{{ renderUsesDisplay }}</strong>
+                  <small>约 20 积分 / 张</small>
+                </div>
+              </div>
+              <div class="points-panel-actions">
+                <el-button text type="primary" @click="handlePointsAction('recharge')">充值</el-button>
+                <el-button text @click="handlePointsAction('detail')">明细</el-button>
+              </div>
+            </div>
+          </el-popover>
           <el-dropdown trigger="click" @command="handleUserCommand">
             <div class="user-avatar">
               <el-icon><UserFilled /></el-icon>
@@ -238,22 +294,63 @@
   </el-container>
 
   <AiAssistant v-if="!route.meta.hideLayout" mascot-src="/images/tiger.png" />
+  <!-- 全局任务进度监视器（浮动在右下角） -->
+  <TaskProgressMonitor />
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { getCurrentUser } from '@/api/auth'
 import AiAssistant from '@/components/AiAssistant.vue'
+import TaskProgressMonitor from '@/components/TaskProgressMonitor.vue'
 import { setupGlobalScanner } from '@/composables/useScanner'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useAppStore } from '@/stores/useAppStore'
+import {
+  estimateRemainingUses,
+  formatBalance,
+  formatPoints,
+  resolveUserCredits,
+} from '@/utils/aiStudio'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const appStore = useAppStore()
 const isCollapse = ref(false)
+
+function readStoredUserInfo() {
+  try {
+    const raw = localStorage.getItem('user_info')
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+const storedUserInfo = ref(readStoredUserInfo())
+const userProfile = computed(() => authStore.user || storedUserInfo.value)
+const walletInfo = computed(() => resolveUserCredits(userProfile.value))
+const pointsDisplay = computed(() => (
+  walletInfo.value.points === null ? '待同步' : formatPoints(walletInfo.value.points)
+))
+const balanceDisplay = computed(() => (
+  walletInfo.value.balance === null ? '--' : formatBalance(walletInfo.value.balance)
+))
+const copyUsesDisplay = computed(() => {
+  const count = estimateRemainingUses(walletInfo.value.points, 'title-gen')
+  return count === null ? '--' : `${formatPoints(count)} 次`
+})
+const imageUsesDisplay = computed(() => {
+  const count = estimateRemainingUses(walletInfo.value.points, 'product-image')
+  return count === null ? '--' : `${formatPoints(count)} 张`
+})
+const renderUsesDisplay = computed(() => {
+  const count = estimateRemainingUses(walletInfo.value.points, 'model-dress')
+  return count === null ? '--' : `${formatPoints(count)} 张`
+})
 
 function navigateTo(path) {
   router.push(path).catch(err => {
@@ -262,9 +359,22 @@ function navigateTo(path) {
   })
 }
 
+// 事件委托：点击侧边栏任意 nav-item 时立即滚动到该位置
+function handleNavClick(e) {
+  const itemEl = e.target.closest('.nav-item')
+  const navMenu = e.currentTarget
+  if (!itemEl || !navMenu) return
+  const menuRect = navMenu.getBoundingClientRect()
+  const itemRect = itemEl.getBoundingClientRect()
+  const offsetTop = itemRect.top - menuRect.top + navMenu.scrollTop - menuRect.height / 3
+  navMenu.scrollTo({ top: Math.max(0, offsetTop), behavior: 'instant' })
+}
+
 const pageMetaMap = {
   '/': { title: '控制台', parent: '' },
   '/goods/onestop': { title: '一站式采集上货', parent: '' },
+  '/goods/ai-image': { title: 'AI智能生图', parent: '' },
+  '/ai-tools': { title: 'AI创意工作室', parent: '' },
   '/shop': { title: '店铺管理', parent: '' },
   '/reports': { title: '数据报表', parent: '' },
   '/settings/team': { title: '团队管理', parent: '' },
@@ -310,7 +420,9 @@ const currentPageMeta = computed(() => pageMetaMap[route.path] || { title: '', p
 const envMode = import.meta.env.MODE === 'production' ? 'prod' : 'dev'
 const envTagText = import.meta.env.MODE === 'production' ? '生产环境' : '开发环境'
 const userName = computed(() => {
-  const phone = localStorage.getItem('user_phone') || ''
+  const name = userProfile.value?.name || userProfile.value?.nickname
+  if (name) return name
+  const phone = String(userProfile.value?.phone || localStorage.getItem('user_phone') || '')
   return phone ? phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') : '用户'
 })
 function toggleAppMode() { appStore.toggleMode() }
@@ -325,7 +437,53 @@ function handleUserCommand(cmd) {
   }
 }
 
+function handlePointsAction(action) {
+  if (action === 'recharge') {
+    ElMessage.info('充值入口待钱包接口接入后开放')
+    return
+  }
+  ElMessage.info('积分明细功能即将上线')
+}
+
 onMounted(() => { setupGlobalScanner() })
+
+onMounted(async () => {
+  const cachedProfile = readStoredUserInfo()
+  if (cachedProfile) {
+    storedUserInfo.value = cachedProfile
+    authStore.setUser(cachedProfile)
+  }
+
+  if (!localStorage.getItem('access_token') || localStorage.getItem('demo_mode') === '1') {
+    return
+  }
+
+  try {
+    const response = await getCurrentUser()
+    const profile = response?.data || response
+    if (profile && typeof profile === 'object') {
+      storedUserInfo.value = profile
+      authStore.setUser(profile)
+      localStorage.setItem('user_info', JSON.stringify(profile))
+    }
+  } catch {
+    // 用户资料同步失败时保留本地缓存，避免打断页面
+  }
+})
+
+// ── 初始加载时滚动到当前激活项（仅首屏） ──
+onMounted(() => {
+  nextTick(() => {
+    const navMenu = document.querySelector('.nav-menu')
+    const activeItem = document.querySelector('.nav-item.active')
+    if (navMenu && activeItem) {
+      const menuRect = navMenu.getBoundingClientRect()
+      const itemRect = activeItem.getBoundingClientRect()
+      const offsetTop = itemRect.top - menuRect.top + navMenu.scrollTop - menuRect.height / 3
+      navMenu.scrollTo({ top: Math.max(0, offsetTop), behavior: 'instant' })
+    }
+  })
+})
 </script>
 
 <style scoped>
@@ -463,6 +621,13 @@ onMounted(() => { setupGlobalScanner() })
   letter-spacing: 0.5px;
 }
 
+.nav-badge--ai {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+
+
+
 .nav-sub-item {
   padding: 8px 12px;
   font-size: 13px;
@@ -553,6 +718,117 @@ onMounted(() => { setupGlobalScanner() })
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.points-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #dbe7f5;
+  background: linear-gradient(135deg, #fffdfa 0%, #f5f9ff 100%);
+  border-radius: 12px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.points-entry:hover {
+  border-color: #b8d3f0;
+  box-shadow: 0 8px 18px rgba(8, 91, 156, 0.08);
+}
+
+.points-entry-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.points-entry-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.points-entry-label {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.points-entry-value {
+  font-size: 14px;
+  color: #111827;
+  line-height: 1.2;
+}
+
+.points-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.points-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.points-panel-label {
+  display: block;
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.points-panel-value {
+  font-size: 24px;
+  color: #111827;
+}
+
+.points-panel-balance {
+  font-size: 12px;
+  color: #085b9c;
+  background: #eef6ff;
+  padding: 4px 8px;
+  border-radius: 999px;
+}
+
+.points-panel-tip {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #6b7280;
+}
+
+.points-usage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.points-usage-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.points-usage-item span,
+.points-usage-item small {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.points-usage-item strong {
+  font-size: 14px;
+  color: #111827;
+}
+
+.points-panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .user-avatar {

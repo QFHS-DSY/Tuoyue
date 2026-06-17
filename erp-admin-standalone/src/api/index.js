@@ -24,6 +24,9 @@ export * from './ops'
 // 拓岳AI（标题生成/描述生成/翻译）
 export * from './ai'
 
+// AI 智能生图
+export * from './aiImage'
+
 // 订单管理
 export * from './order'
 

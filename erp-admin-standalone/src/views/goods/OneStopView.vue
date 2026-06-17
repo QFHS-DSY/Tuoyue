@@ -1792,13 +1792,31 @@ const scanTipBarcode = ref('')
 
 // ==================== 核心方法 ====================
 
+// ── 收紧的商品 URL 正则校验 ──
+const URL_PATTERNS = {
+  '1688': /^https?:\/\/(?:[\w-]+\.)?1688\.com\/offer\/(\d+)\.html(?:\?.*)?$/i,
+  'taobao': /^https?:\/\/item\.taobao\.com\/item\.htm\?.*id=(\d+)/i,
+  'tmall': /^https?:\/\/(?:detail\.)?tmall\.com\/item\.htm\?.*id=(\d+)/i,
+  'pdd': /^https?:\/\/(?:mobile\.)?(?:yangkeduo|pinduoduo)\.com\/goods\d*\.html\?.*goods_id=(\d+)/i,
+}
+
 /** 识别货源平台 */
 function detectPlatform(url) {
-  if (url.includes('1688.com')) return '1688'
-  if (url.includes('taobao.com')) return '淘宝'
-  if (url.includes('tmall.com')) return '天猫'
-  if (url.includes('pinduoduo.com') || url.includes('yangkeduo.com')) return '拼多多'
+  for (const [platform, pattern] of Object.entries(URL_PATTERNS)) {
+    if (pattern.test(url)) {
+      const map = { '1688': '1688', 'taobao': '淘宝', 'tmall': '天猫', 'pdd': '拼多多' }
+      return map[platform] || platform
+    }
+  }
   return '未知'
+}
+
+/** 严格校验 URL 是否匹配支持的商品详情页格式 */
+function validateSourceUrl(url) {
+  for (const pattern of Object.values(URL_PATTERNS)) {
+    if (pattern.test(url)) return true
+  }
+  return false
 }
 
 /** 一站式采集上货主流程 */
@@ -1807,6 +1825,12 @@ async function startOneStop() {
 
   const url = sourceUrl.value.trim()
   const targets = selectedTargets.value
+
+  // 严格 URL 校验
+  if (!validateSourceUrl(url)) {
+    ElMessage.error('请输入有效的商品详情页链接（支持 1688/淘宝/天猫/拼多多）')
+    return
+  }
 
   if (targets.length === 0) {
     ElMessage.warning('请至少选择一个目标上架平台')

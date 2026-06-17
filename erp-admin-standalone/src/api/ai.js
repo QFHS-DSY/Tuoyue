@@ -3,6 +3,9 @@
  * 使用共享 request 实例（统一 auth token + Vite 代理）
  */
 import request from '@/utils/request'
+import { AI_LONG_TIMEOUT_MS } from '@/utils/aiStudio'
+
+const AI_REQUEST_CONFIG = { timeout: AI_LONG_TIMEOUT_MS }
 
 // ===================== 核心接口 =====================
 
@@ -10,15 +13,16 @@ import request from '@/utils/request'
  * 为商品生成标题（吸引点击）
  */
 export async function generateTitle(goodsInfo) {
-  const { name, category, material, style, features, targetMarket } = goodsInfo
+  const { name, category, material, style, features, platform, targetMarket } = goodsInfo
   const res = await request.post('/api/ai/generate-title/', {
     name,
     category,
+    platform: platform || 'Amazon',
     material: material || '',
     style: style || '',
     features: features || '',
     target_market: targetMarket || '跨境电商通用',
-  })
+  }, AI_REQUEST_CONFIG)
   return res?.data?.title || res?.title || ''
 }
 
@@ -27,7 +31,17 @@ export async function generateTitle(goodsInfo) {
  * @returns {{ description: string, description_cn: string }}
  */
 export async function generateDescription(goodsInfo) {
-  const { name, category, material, style, features, specs, targetMarket } = goodsInfo
+  const {
+    name,
+    category,
+    material,
+    style,
+    features,
+    specs,
+    targetMarket,
+    targetLang,
+    tone,
+  } = goodsInfo
   const res = await request.post('/api/ai/generate-description/', {
     name,
     category,
@@ -36,7 +50,9 @@ export async function generateDescription(goodsInfo) {
     features: features || '',
     specs: specs || '',
     target_market: targetMarket || '跨境电商通用',
-  })
+    target_lang: targetLang || 'en',
+    tone: tone || 'professional',
+  }, AI_REQUEST_CONFIG)
   const data = res?.data || res || {}
   return {
     description: data.description || '',
@@ -54,7 +70,7 @@ export async function refineDescription(originalDesc, adjustment) {
   const res = await request.post('/api/ai/refine-description/', {
     original_desc: originalDesc,
     adjustment: adjustment,
-  })
+  }, AI_REQUEST_CONFIG)
   const data = res?.data || res || {}
   return {
     description: data.description || '',
@@ -65,11 +81,12 @@ export async function refineDescription(originalDesc, adjustment) {
 /**
  * 多语言翻译
  */
-export async function translate(text, targetLang) {
+export async function translate(text, targetLang, sourceLang = 'auto') {
   const res = await request.post('/api/ai/translate/', {
     text,
+    source_lang: sourceLang,
     target_lang: targetLang,
-  })
+  }, AI_REQUEST_CONFIG)
   return res?.data?.translation || res?.translation || ''
 }
 
@@ -79,7 +96,7 @@ export async function translate(text, targetLang) {
  * @returns {{ imageUrl: string, imageBase64: string, prompts: string[] }}
  */
 export async function generateImage(prompt) {
-  const res = await request.post('/api/ai/image/generate/', { prompt })
+  const res = await request.post('/api/ai/image/generate/', { prompt }, AI_REQUEST_CONFIG)
   const data = res?.data || res || {}
   return {
     imageUrl: data.image_url || '',
@@ -95,7 +112,10 @@ export async function generateImage(prompt) {
  * @returns {{ imageUrl: string, imageBase64: string }}
  */
 export async function editImage(prompt, imageBase64) {
-  const res = await request.post('/api/ai/image/edit/', { prompt, image_base64: imageBase64 })
+  const res = await request.post('/api/ai/image/edit/', {
+    prompt,
+    image_base64: imageBase64,
+  }, AI_REQUEST_CONFIG)
   const data = res?.data || res || {}
   return {
     imageUrl: data.image_url || '',
@@ -109,13 +129,15 @@ export async function editImage(prompt, imageBase64) {
  * @returns {Array<{icon, title, desc}>}
  */
 export async function generateFeatures(goodsInfo) {
-  const { name, category, material, style } = goodsInfo
+  const { name, category, material, style, features, count } = goodsInfo
   const res = await request.post('/api/ai/generate-features/', {
     name,
     category: category || '',
     material: material || '',
     style: style || '',
-  })
+    features: features || '',
+    count: count || undefined,
+  }, AI_REQUEST_CONFIG)
   return res?.data?.features || res?.features || []
 }
 
@@ -135,7 +157,7 @@ export async function tuoyueChat(messages, systemPrompt = '') {
       system_prompt: systemPrompt,
       temperature: 0.7,
       max_tokens: 800,
-    }, { timeout: 90000 })  // AI 调用需要更长超时
+    }, AI_REQUEST_CONFIG)
 
     // 后端 success_response 返回 { code:200, data:{ reply:"..." } }
     const reply = res?.data?.reply || res?.reply || ''

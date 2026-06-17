@@ -38,13 +38,6 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           // Django URL 本身含 api 前缀，不 rewrite
         },
-        // 拓岳AI代理：解决跨域问题
-        '/ai-api': {
-          target: 'https://api.tuoyue-tech.shop',
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/ai-api/, '/v1'),
-          secure: true,
-        },
       },
     },
   }

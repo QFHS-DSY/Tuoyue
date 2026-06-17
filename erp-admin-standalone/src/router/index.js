@@ -75,6 +75,18 @@ const router = createRouter({
       component: () => import('@/views/goods/DecisionView.vue'),
       meta: { title: '选品决策', icon: 'DataAnalysis' },
     },
+    {
+      path: '/goods/ai-image',
+      name: 'goods-ai-image',
+      component: () => import('@/views/goods/AIImageGenView.vue'),
+      meta: { title: 'AI智能生图', icon: 'PictureFilled' },
+    },
+    {
+      path: '/ai-tools',
+      name: 'ai-tools',
+      component: () => import('@/views/skillhub/AIToolsCenter.vue'),
+      meta: { title: 'AI创意工作室', icon: 'MagicStick' },
+    },
     // ==================== 订单模块 ====================
     {
       path: '/orders',
@@ -191,7 +203,13 @@ router.beforeEach((to, from) => {
     return true
   }
   
-  // 其他页面：检查登录状态
+  // 其他页面：检查登录状态（临时开发模式跳过）
+  if (import.meta.env.DEV) {
+    // 开发模式：自动注入 demo token 绕过登录
+    localStorage.setItem('access_token', 'dev_demo_token')
+    localStorage.setItem('demo_mode', '1')
+    return true
+  }
   const token = localStorage.getItem('access_token')
   if (!token) {
     return '/login'
